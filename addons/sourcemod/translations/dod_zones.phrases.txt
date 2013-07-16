@@ -1,0 +1,209 @@
+"Phrases"
+{
+	"Setup Zones"
+	{
+		"en"			"Setup Zones"
+	}
+	"Setup Zones For"
+	{
+		"#format"		"{1:s}"
+		"en"			"Setup Zones for {1}"
+	}
+	"Zone Edge"
+	{
+		"en"			"Push \"E\" button to set a zone."
+	}
+	"Type Zone Name"
+	{
+		"en"			"Please type a name for this zone in chat. Type !stop to abort."
+	}
+	"Abort Zone Name"
+	{
+		"en"			"Stopped naming the new zone and removed the zone."
+	}
+	"Abort Zone Rename"
+	{
+		"en"			"Stopped renaming the zone."
+	}
+	"Adding Zone"
+	{
+		"en"			"Adding a zone:"
+	}
+	"Confirm Delete Zone"
+	{
+		"#format"		"{1:s}"
+		"en"			"Do you really want to delete \"{1}\"?"
+	}
+	"Save"
+	{
+		"en"			"Save"
+	}
+	"Name Already Taken"
+	{
+		"#format"		"{1:s}"
+		"en"			"There is already a zone called \"{1}\". Please write a different name in chat."
+	}
+	"Saved"
+	{
+		"en"			"Saved changes successfully."
+	}
+	"Discard"
+	{
+		"en"			"Discard"
+	}
+	"Discarded"
+	{
+		"en"			"Discarded."
+	}
+	"Delete Zone"
+	{
+		"en"			"Delete zone"
+	}
+	"Deleted Zone"
+	{
+		"#format"		"{1:s}"
+		"en"			"Deleted zone \"{1}\" successfully."
+	}
+	"Deleted Fence"
+	{
+		"#format"		"{1:s}"
+		"en"			"Deleted fence \"{1}\" successfully."
+	}
+	"Canceled Fence Deletion"
+	{
+		"en"			"Canceled the deletion of the fence."
+	}
+	"Canceled Zone Deletion"
+	{
+		"en"			"Canceled the deletion of the zone."
+	}
+	"Name Edited"
+	{
+		"en"			"Edited the name successfully."
+	}
+	"Activate Zones"
+	{
+		"en"			"Activate a zone"
+	}
+	"Diactivate Zones"
+	{
+		"en"			"Diactivate a zone"
+	}
+	"Activated Zones"
+	{
+		"en"			"Activated zones"
+	}
+	"Diactivated Zones"
+	{
+		"en"			"Diactivated zones"
+	}
+	"Active Zones"
+	{
+		"en"			"Setup active zones"
+	}
+	"Add Zones"
+	{
+		"en"			"Add zone"
+	}
+	"Add Zone Instruction"
+	{
+		"en"			"Push \"E\" button to set another zone at your feet, which will specify the two diagonal opposite corners of the zone."
+	}
+	"Manage Zone"
+	{
+		"#format"		"{1:s}"
+		"en"			"Manage {1} zone:"
+	}
+	"Edit First Point"
+	{
+		"en"			"Edit First Point"
+	}
+	"Edit Second Point"
+	{
+		"en"			"Edit Second Point"
+	}
+	"Edit Name"
+	{
+		"en"			"Edit Name"
+	}
+	"Teleport To"
+	{
+		"en"			"Teleport to"
+	}
+	"Both"
+	{
+		"en"			"Both"
+	}
+	"Trigger Team"
+	{
+		"#format"		"{1:s}"
+		"en"			"Team: {1}"
+	}
+	"Edit Zone"
+	{
+		"#format"		"{1:s},{2:d}"
+		"en"			"Edit {1} at position {2}:"
+	}
+	"Add to X"
+	{
+		"en"			"Add to X"
+	}
+	"Add to Y"
+	{
+		"en"			"Add to Y"
+	}
+	"Add to Z"
+	{
+		"en"			"Add to Z"
+	}
+	"Subtract from X"
+	{
+		"en"			"Subtract from X"
+	}
+	"Subtract from Y"
+	{
+		"en"			"Subtract from Y"
+	}
+	"Subtract from Z"
+	{
+		"en"			"Subtract from Z"
+	}
+	"Player Entered Zone"
+	{
+		"#format"		"{1:N},{2:s}"
+		"en"			"{1} entered protected zone \"{2}\"."
+	}
+	"Player Slayed"
+	{
+		"#format"		"{1:N},{2:s}"
+		"en"			"{1} has been slayed for entering protected zone \"{2}\"."
+	}
+	"Punishment"
+	{
+		"en"			"Punishment"
+	}
+	"Default"
+	{
+		"en"			"Default"
+	}
+	"Print Message"
+	{
+		"en"			"Print message in chat"
+	}
+	"Bounce Back"
+	{
+		"en"			"Push player back"
+	}
+	"Only Melee"
+	{
+		"en"			"Allow only the melee"
+	}
+	"Nothing"
+	{
+		"en"			"Nothing"
+	}
+	"Custom Punishment"
+	{
+		"en"			"Custom"
+	}
+}
