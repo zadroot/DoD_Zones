@@ -2,7 +2,7 @@
 * DoD:S Zones by Root
 *
 * Description:
-*   Defines zones with different punishments where players are enter.
+*   Defines map zones with different punishments where players are enter.
 *
 * Version 1.1
 * Changelog & more info at http://goo.gl/4nKhJ
@@ -14,8 +14,8 @@
 #include <sdktools>
 
 #undef REQUIRE_EXTENSIONS
-#undef REQUIRE_PLUGIN
 #include <sdkhooks>
+#undef REQUIRE_PLUGIN
 #include <adminmenu>
 
 // ====[ CONSTANTS ]=========================================================
@@ -29,7 +29,7 @@
 #define DOD_MAXWEAPONS   47
 #define DEFAULT_INTERVAL 5.0
 #define ZONES_MODEL      "models/error.mdl"
-#define PREFIX           "\x04[DoD:S Zones]\x01 >> \x07FFFF00"
+#define PREFIX           "\x01[\x04DoD:S Zones\x01] >> \x07FFFF00"
 
 enum
 {
@@ -105,7 +105,7 @@ public Plugin:myinfo =
 {
 	name        = PLUGIN_NAME,
 	author      = "Root (based on \"Anti Rush\" plugin by Jannik 'Peace-Maker' Hartung)",
-	description = "Defines zones with different punishments where players are enter",
+	description = "Defines map zones with different punishments where players are enter",
 	version     = PLUGIN_VERSION,
 	url         = "http://www.dodsplugins.com/, http://www.wcfan.de/"
 }
@@ -151,11 +151,11 @@ public OnPluginStart()
 	AddCommandListener(Command_Chat, "say");
 	AddCommandListener(Command_Chat, "say_team");
 
-	// Fix for No Shoot punishment
+	// Punishment hotfix
 	AddCommandListener(Command_Drop, "drop");
 
-	// Register admin commands, which is requires config flag to use
-	RegAdminCmd("sm_zones",     Command_SetupZones,     ADMFLAG_CONFIG, "Opens zones main menu");
+	// Register admin commands, which is requires config flag
+	RegAdminCmd("sm_zones",     Command_SetupZones,     ADMFLAG_CONFIG, "Opens the zones main menu");
 	RegAdminCmd("sm_actzone",   Command_ActivateZone,   ADMFLAG_CONFIG, "Activates a zone (by name)");
 	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone (by name)");
 
@@ -425,7 +425,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				}
 
 				// If any punishment is used, set a real punishment value
-				if (punishment > CUSTOM)
+				if (punishment > DEFAULT_PUNISHMENT)
 				{
 					real_punishment = punishment;
 				}
@@ -491,7 +491,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							// Retrieve the all weapons of a player
 							new weapons = GetEntDataEnt2(activator, m_hMyWeapons + (i * 4));
 
-							// Make sure its valid
+							// Valid?
 							if (weapons != -1)
 							{
 								if (StartTouch)
@@ -520,7 +520,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 								decl String:class[24];
 								GetEdictClassname(weapon, class, sizeof(class));
 								FakeClientCommand(activator, "use %s", class);
-								// SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+								//SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
 							}
 
 							PrintToChat(activator, "%s%t", PREFIX, "Can use melee");
@@ -717,7 +717,7 @@ public Action:Command_SetupZones(client, args)
 public Action:Command_ActivateZone(client, args)
 {
 	// Once again check if server was used this command
-	if (!client && args > 0)
+	if (!client && args == 1)
 	{
 		decl String:text[64];
 		GetCmdArg(1, text, sizeof(text));
@@ -738,7 +738,7 @@ public Action:Command_ActivateZone(client, args)
 public Action:Command_DiactivateZone(client, args)
 {
 	// Check whether or not argument (name) is sent
-	if (!client && args > 0)
+	if (!client && args == 1)
 	{
 		// If server is used a command, just diactivate zone by name
 		decl String:text[64];
@@ -1240,7 +1240,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				FileToKeyValues(kv, config);
 				if (!KvGotoFirstSubKey(kv))
 				{
-					// wtf? Config is not available or broken? Stop function then!
+					// Wtf?! Config is not available or broken? Stop function then!
 					CloseHandle(kv);
 					ShowZoneOptionsMenu(client);
 					PrintToChat(client, "%sConfig file is empty. Can't edit it permanently!", PREFIX);
