@@ -4,7 +4,7 @@
 * Description:
 *   Defines zones where players are not allowed to enter.
 *
-* Version 1.0
+* Version 1.1
 * Changelog & more info at http://goo.gl/4nKhJ
 */
 
@@ -21,11 +21,12 @@
 
 // ====[ CONSTANTS ]=========================================================
 #define PLUGIN_NAME      "DoD:S Zones"
-#define PLUGIN_VERSION   "1.0"
+#define PLUGIN_VERSION   "1.1"
 
 #define INIT             -1
 #define EF_NODRAW        0x020
 #define DOD_MAXPLAYERS   33
+#define DOD_MAXWEAPONS   47
 #define DEFAULT_INTERVAL 5.0
 #define ZONES_MODEL      "models/error.mdl"
 #define PREFIX           "\x04[DoD:S Zones]\x01 >> \x07FFFF00"
@@ -55,7 +56,7 @@ enum // Punishments
 	BOUNCE,
 	SLAY,
 	MELEE,
-	NOTHING,
+	NOSHOOT,
 
 	PUNISHMENTS_SIZE
 }
@@ -93,6 +94,9 @@ new	LaserMaterial = INIT,
 	HaloMaterial  = INIT,
 	GlowSprite    = INIT,
 	String:map[64],
+	m_hMyWeapons,
+	m_flNextPrimaryAttack,
+	m_flNextSecondaryAttack,
 	TeamZones[TEAM_SIZE];
 
 // ====[ PLUGIN ]============================================================
@@ -136,21 +140,19 @@ public OnPluginStart()
 {
 	// I've created this plugin based on Peace-Maker's "Anti-Rush" plugin - so keep this version ConVar then
 	CreateConVar("sm_antirush_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
-
-	// Create main ConVars
-	zones_enabled    = CreateConVar("dod_zones_enable",        "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	zones_punishment = CreateConVar("dod_zones_punishment",    "2", "Determines how plugin should handle players who entered a restricted zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay\n4 = Allow melee only\n5 = Nothing", FCVAR_PLUGIN, true, 1.0, true, 5.0);
-	admin_immunity   = CreateConVar("dod_zones_adminimmunity", "0", "Whether or not allow admins to across zones without any punishments", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	show_zones       = CreateConVar("dod_zones_show",          "0", "Whether or not always show the zones on a map", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a restricted zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay\n4 = Allow melee only\n5 = Dont allow to shoot", FCVAR_PLUGIN, true, 1.0, true, 5.0);
+	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not always show the zones on a map", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
 	// Needed to define zone name or cancel/stop creating
 	AddCommandListener(Command_Chat, "say");
 	AddCommandListener(Command_Chat, "say_team");
 
 	// Register admin commands, which is requires config flag to use
-	RegAdminCmd("sm_zones",     Command_SetupZones,     ADMFLAG_CONFIG, "Opens zones menu");
-	RegAdminCmd("sm_actzone",   Command_ActivateZone,   ADMFLAG_CONFIG, "Activates a zone by name");
-	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone by name");
+	RegAdminCmd("sm_zones",     Command_SetupZones,     ADMFLAG_CONFIG, "Opens zones main menu");
+	RegAdminCmd("sm_actzone",   Command_ActivateZone,   ADMFLAG_CONFIG, "Activates a zone");
+	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone");
 
 	// Hook events
 	HookEvent("player_death",    OnPlayerDeath);
@@ -166,6 +168,24 @@ public OnPluginStart()
 	if (LibraryExists("adminmenu") && ((topmenu = GetAdminTopMenu()) != INVALID_HANDLE))
 	{
 		OnAdminMenuReady(topmenu);
+	}
+
+	// Finds a networkable send property offset for "CBasePlayer::m_hMyWeapons"
+	if ((m_hMyWeapons = FindSendPropOffs("CBasePlayer", "m_hMyWeapons")) == -1)
+	{
+		// Disable plugin if offset was not found
+		SetFailState("Fatal Error: Unable to find prop offset \"CBasePlayer::m_hMyWeapons\"!");
+	}
+
+	// Also find appropriate networkable send property offsets for a weapons
+	if ((m_flNextPrimaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextPrimaryAttack")) == -1)
+	{
+		SetFailState("Fatal Error: Unable to find prop offset \"CBaseCombatWeapon::m_flNextPrimaryAttack\"!");
+	}
+	if ((m_flNextSecondaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextSecondaryAttack")) == -1)
+	{
+		// Disable plugin if offset was not found
+		SetFailState("Fatal Error: Unable to find prop offset \"CBaseCombatWeapon::m_flNextSecondaryAttack\"!");
 	}
 
 	// Create a global array
@@ -334,7 +354,7 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 		// Then re-create X zones depends on array size
 		for (new j = 0; j < GetArraySize(ZonesArray); j++)
 		{
-			SpawnTriggerMultipleInBox(j);
+			SpawnZone(j);
 		}
 	}
 }
@@ -349,11 +369,11 @@ public OnPlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
 	BlockFiring[GetClientOfUserId(GetEventInt(event, "userid"))] = false;
 }
 
-/* OnStartTouch()
+/* OnTouch()
  *
  * Called when the player touches a zone.
  * -------------------------------------------------------------------------- */
-public OnStartTouch(const String:output[], caller, activator, Float:delay)
+public OnTouch(const String:output[], caller, activator, Float:delay)
 {
 	if (GetConVarBool(zones_enabled))
 	{
@@ -409,25 +429,31 @@ public OnStartTouch(const String:output[], caller, activator, Float:delay)
 					case ANNOUNCE: PrintToChatAll("%s%t", PREFIX, "Player Entered Zone", activator, targetname[9]);
 					case BOUNCE:
 					{
-						// Bounce actovator back
-						decl Float:vel[3];
+						if (StrEqual(output, "OnStartTouch", false))
+						{
+							// Bounce actovator back
+							decl Float:vel[3];
 
-						vel[0] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[0]");
-						vel[1] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[1]");
-						vel[2] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[2]");
+							vel[0] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[0]");
+							vel[1] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[1]");
+							vel[2] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[2]");
 
-						vel[0] *= -2.0;
-						vel[1] *= -2.0;
+							vel[0] *= -2.0;
+							vel[1] *= -2.0;
 
-						// Always bounce back with at least 200 velocity
-						if (vel[1] > 0.0 && vel[1] < 200.0)
-							vel[1] = 200.0;
-						else if (vel[1] < 0.0 && vel[1] > -200.0)
-							vel[1] = -200.0;
-						if (vel[2] > 0.0) // Never push the activator up!
-							vel[2] *= -1.0;
+							// Always bounce back with at least 200 velocity
+							if (vel[1] > 0.0 && vel[1] < 200.0)
+								vel[1] = 200.0;
+							else if (vel[1] < 0.0 && vel[1] > -200.0)
+								vel[1] = -200.0;
+							if (vel[2] > 0.0) // Never push the activator up!
+								vel[2] *= -1.0;
 
-						TeleportEntity(activator, NULL_VECTOR, NULL_VECTOR, vel);
+							TeleportEntity(activator, NULL_VECTOR, NULL_VECTOR, vel);
+
+							// Notify player about not allowing to enter there by default phrase from resources
+							PrintHintText(activator, "#Dod_wrong_way");
+						}
 					}
 					case SLAY: // Slay
 					{
@@ -436,18 +462,65 @@ public OnStartTouch(const String:output[], caller, activator, Float:delay)
 					}
 					case MELEE: // Only allow the usage of the melee weapons
 					{
-						// Manually change player's weapon to knife
-						new weapon = GetPlayerWeaponSlot(activator, 2);
-						if (weapon != -1)
+						if (StrEqual(output, "OnStartTouch", false))
 						{
-							// Better than "FakeClientCommand(activator, "use weaponname")
-							SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+							// Manually change player's weapon to knife
+							new weapon = GetPlayerWeaponSlot(activator, 2);
+							if (weapon != -1)
+							{
+								// Better than "FakeClientCommand(activator, "use weaponname")
+								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+							}
+
+							PrintToChat(activator, "%s%t", PREFIX, "Can use melee");
+
+							// Respecitvitely set boolean for weapon
+							BlockFiring[activator] = true;
+						}
+						else
+						{
+							// When player leaves a zone (it's usually OnEndTouch callback), allow other weapons usage and notify player
+							PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
+							BlockFiring[activator] = false;
+						}
+					}
+					case NOSHOOT:
+					{
+						// Check if player has entered a zone
+						if (StrEqual(output, "OnStartTouch", false))
+						{
+							// Notify player that he is not allowed to shoot
+							PrintToChat(activator, "%s%t", PREFIX, "Cant shoot");
+						}
+						else // Nope - player left
+						{
+							PrintToChat(activator, "%s%t", PREFIX, "Can shoot");
 						}
 
-						// Respecitvitely set boolean for weapon
-						BlockFiring[activator] = true;
+						// 47 offsets are in m_hMyWeapons table
+						for (new i = 0; i < DOD_MAXWEAPONS + 1; i++)
+						{
+							// Retrieve the weapons of a player
+							new weapons = GetEntDataEnt2(activator, m_hMyWeapons + (i * 4));
+
+							// Make sure its valid
+							if (weapons != -1)
+							{
+								if (StrEqual(output, "OnStartTouch", false))
+								{
+									// Then dont allow player to shoot by this weapons
+									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   GetGameTime() + 999.9);
+									SetEntDataFloat(weapons, m_flNextSecondaryAttack, GetGameTime() + 999.9);
+								}
+								else
+								{
+									// Otherwise if player left a zone - allow shooting
+									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   GetGameTime());
+									SetEntDataFloat(weapons, m_flNextSecondaryAttack, GetGameTime());
+								}
+							}
+						}
 					}
-					case NOTHING: BlockFiring[activator] = false; // Allow the usage of any weapon again
 					default:
 					{
 						//custom punishment will be inserted here, but later
@@ -546,7 +619,7 @@ public Action:Command_Chat(client, const String:command[], args)
 		}
 
 		// Kill the previous zone (its really better than just renaming via config)
-		KillTriggerEntity(EditingZone[client]);
+		KillZone(EditingZone[client]);
 
 		new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
 
@@ -557,7 +630,7 @@ public Action:Command_Chat(client, const String:command[], args)
 		SetArrayString(hZone, 0, text);
 
 		// Re-spawn an entity again
-		SpawnTriggerMultipleInBox(EditingZone[client]);
+		SpawnZone(EditingZone[client]);
 
 		// Update the config file
 		decl String:config[PLATFORM_MAX_PATH];
@@ -1025,9 +1098,9 @@ ShowZoneOptionMenu(client)
 			{
 				Format(buffer, sizeof(buffer), "%T", "Only Melee", client);
 			}
-			case NOTHING:
+			case NOSHOOT:
 			{
-				Format(buffer, sizeof(buffer), "%T", "Nothing", client);
+				Format(buffer, sizeof(buffer), "%T", "No shooting", client);
 			}
 			default: // usually 0
 			{
@@ -1422,8 +1495,8 @@ public MenuHandler_EditVector(Handle:menu, MenuAction:action, client, param)
 				}
 
 				// Re-spawn zone when its saved
-				KillTriggerEntity(EditingZone[client]);
-				SpawnTriggerMultipleInBox(EditingZone[client]);
+				KillZone(EditingZone[client]);
+				SpawnZone(EditingZone[client]);
 
 				// Notify client about saving position
 				PrintToChat(client, "%s%t", PREFIX, "Saved");
@@ -1687,7 +1760,7 @@ public MenuHandler_SaveNewZone(Handle:menu, MenuAction:action, client, param)
 				EditingZone[client] = PushArrayCell(ZonesArray, TempArray);
 
 				// Spawn the trigger_multiple entity (zone)
-				SpawnTriggerMultipleInBox(EditingZone[client]);
+				SpawnZone(EditingZone[client]);
 
 				// Notify client about successfull saving
 				PrintToChat(client, "%s%t", PREFIX, "Saved");
@@ -1726,7 +1799,7 @@ public PanelHandler_ConfirmDelete(Handle:menu, MenuAction:action, client, param)
 		if (param == 1)
 		{
 			// Kill the trigger_multiple
-			KillTriggerEntity(EditingZone[client]);
+			KillZone(EditingZone[client]);
 
 			// Delete from cache array
 			decl String:ZoneName[64];
@@ -1945,7 +2018,7 @@ ParseZoneConfig()
 			zoneIndex = PushArrayCell(ZonesArray, TempArray);
 
 			// Spawn a zone each time KV got a config for
-			SpawnTriggerMultipleInBox(zoneIndex);
+			SpawnZone(zoneIndex);
 		}
 
 		// Until keyvalues config is ended
@@ -1974,7 +2047,7 @@ ActivateZone(const String:text[])
 		&& GetEdictClassname(i, class, sizeof(class))
 		&& StrEqual(class, "trigger_multiple", false)
 		&& GetEntPropString(i, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrEqual(class[9], text, false)) // Skin first 9 characters to avoid comparing with 'dod_zone %' prefix
+		&& StrEqual(class[9], text, false)) // Skip first 9 characters to avoid comparing with 'dod_zone %' prefix
 		{
 			// Found - activate a zone and break the loop
 			AcceptEntityInput(i, "Enable");
@@ -2008,11 +2081,11 @@ DiactivateZone(const String:text[])
 	}
 }
 
-/* SpawnTriggerMultipleInBox()
+/* SpawnZone()
  *
  * Spawns a trigger_multiple entity (zone)
  * -------------------------------------------------------------------------- */
-SpawnTriggerMultipleInBox(zoneIndex)
+SpawnZone(zoneIndex)
 {
 	decl Float:middle[3], Float:m_vecMins[3], Float:m_vecMaxs[3], String:ZoneName[128];
 
@@ -2084,14 +2157,15 @@ SpawnTriggerMultipleInBox(zoneIndex)
 	SetEntProp(ent, Prop_Send, "m_fEffects", m_fEffects);
 
 	// Hook StartTouch entity output
-	HookSingleEntityOutput(ent, "OnStartTouch", OnStartTouch);
+	HookSingleEntityOutput(ent, "OnStartTouch", OnTouch);
+	HookSingleEntityOutput(ent, "OnEndTouch",   OnTouch);
 }
 
-/* KillTriggerEntity()
+/* KillZone()
  *
  * Removes a trigger_multiple entity (zone) from a world.
  * -------------------------------------------------------------------------- */
-KillTriggerEntity(zoneIndex)
+KillZone(zoneIndex)
 {
 	decl String:ZoneName[128], String:class[256], i;
 
@@ -2109,7 +2183,8 @@ KillTriggerEntity(zoneIndex)
 		&& StrEqual(class[9], ZoneName, false)) // And check if m_iName is equal to name from array
 		{
 			// Unhook touch callback, kill an entity and break the loop
-			UnhookSingleEntityOutput(i, "OnStartTouch", OnStartTouch);
+			UnhookSingleEntityOutput(i, "OnStartTouch", OnTouch);
+			UnhookSingleEntityOutput(i, "OnEndTouch",   OnTouch);
 			AcceptEntityInput(i, "Kill");
 			break;
 		}

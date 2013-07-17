@@ -178,6 +178,22 @@
 		"#format"		"{1:N},{2:s}"
 		"en"			"{1} has been slayed for entering protected zone \"{2}\"."
 	}
+	"Can use melee"
+	{
+		"en"			"You can use only melee while standing at this zone."
+	}
+	"Can use any weapon"
+	{
+		"en"			"Now you can use any weapon."
+	}
+	"Cant shoot"
+	{
+		"en"			"You cant shoot while standing at this zone."
+	}
+	"Can shoot"
+	{
+		"en"			"Now you can shoot."
+	}
 	"Punishment"
 	{
 		"en"			"Punishment"
@@ -198,9 +214,9 @@
 	{
 		"en"			"Allow only the melee"
 	}
-	"Nothing"
+	"No shooting"
 	{
-		"en"			"Nothing"
+		"en"			"No shooting"
 	}
 	"Custom Punishment"
 	{
