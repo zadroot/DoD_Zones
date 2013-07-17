@@ -178,7 +178,7 @@
 		"#format"		"{1:N},{2:s}"
 		"en"			"{1} has been slayed for entering protected zone \"{2}\"."
 	}
-	"Can use melee"
+	"Can use melee only"
 	{
 		"en"			"You can use only melee while standing at this zone."
 	}
@@ -186,7 +186,7 @@
 	{
 		"en"			"Now you can use any weapon."
 	}
-	"Cant shoot"
+	"Can't shoot"
 	{
 		"en"			"You cant shoot while standing at this zone."
 	}

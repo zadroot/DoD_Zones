@@ -168,7 +168,7 @@
 	{
 		"de"			"{1} wurde fuer das betreten der geschuetzten Zone \"{2}\" erschlagen."
 	}
-	"Can use melee"
+	"Can use melee only"
 	{
 		"de"			"Du kannst nur Nahkampfwaffen nutzen, waehrend Du in dieser Zone bist."
 	}
@@ -176,7 +176,7 @@
 	{
 		"de"			"Du kannst nun jede Waffe nutzen."
 	}
-	"Cant shoot"
+	"Can't shoot"
 	{
 		"de"			"Du kannst nicht schiessen, waehrend Du in dieser Zone stehst."
 	}
