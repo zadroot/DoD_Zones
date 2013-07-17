@@ -55,8 +55,8 @@ enum // Punishments
 	ANNOUNCE,
 	BOUNCE,
 	SLAY,
-	MELEE,
 	NOSHOOT,
+	MELEE,
 
 	PUNISHMENTS_SIZE
 }
@@ -141,7 +141,7 @@ public OnPluginStart()
 	// I've created this plugin based on Peace-Maker's "Anti-Rush" plugin - so keep this version ConVar then
 	CreateConVar("sm_antirush_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a restricted zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay\n4 = Allow melee only\n5 = Dont allow to shoot", FCVAR_PLUGIN, true, 1.0, true, 5.0);
+	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a restricted zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay\n4 = Dont allow to shoot\n5 = Allow melee only", FCVAR_PLUGIN, true, 1.0, true, 5.0);
 	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not always show the zones on a map", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
@@ -460,30 +460,6 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						PrintToChatAll("%s%t", PREFIX, "Player Slayed", activator, targetname[9]);
 						ForcePlayerSuicide(activator);
 					}
-					case MELEE: // Only allow the usage of the melee weapons
-					{
-						if (StrEqual(output, "OnStartTouch", false))
-						{
-							// Manually change player's weapon to knife
-							new weapon = GetPlayerWeaponSlot(activator, 2);
-							if (weapon != -1)
-							{
-								// Better than "FakeClientCommand(activator, "use weaponname")
-								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
-							}
-
-							PrintToChat(activator, "%s%t", PREFIX, "Can use melee");
-
-							// Respecitvitely set boolean for weapon
-							BlockFiring[activator] = true;
-						}
-						else
-						{
-							// When player leaves a zone (it's usually OnEndTouch callback), allow other weapons usage and notify player
-							PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
-							BlockFiring[activator] = false;
-						}
-					}
 					case NOSHOOT:
 					{
 						// Check if player has entered a zone
@@ -519,6 +495,30 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 									SetEntDataFloat(weapons, m_flNextSecondaryAttack, GetGameTime());
 								}
 							}
+						}
+					}
+					case MELEE: // Only allow the usage of the melee weapons
+					{
+						if (StrEqual(output, "OnStartTouch", false))
+						{
+							// Manually change player's weapon to knife
+							new weapon = GetPlayerWeaponSlot(activator, 2);
+							if (weapon != -1)
+							{
+								// Better than "FakeClientCommand(activator, "use weaponname")
+								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+							}
+
+							PrintToChat(activator, "%s%t", PREFIX, "Can use melee");
+
+							// Respecitvitely set boolean for weapon
+							BlockFiring[activator] = true;
+						}
+						else
+						{
+							// When player leaves a zone (it's usually OnEndTouch callback), allow other weapons usage and notify player
+							PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
+							BlockFiring[activator] = false;
 						}
 					}
 					default:
@@ -1094,13 +1094,13 @@ ShowZoneOptionMenu(client)
 			{
 				Format(buffer, sizeof(buffer), "%T", "Slay player", client);
 			}
-			case MELEE:
-			{
-				Format(buffer, sizeof(buffer), "%T", "Only Melee", client);
-			}
 			case NOSHOOT:
 			{
 				Format(buffer, sizeof(buffer), "%T", "No shooting", client);
+			}
+			case MELEE:
+			{
+				Format(buffer, sizeof(buffer), "%T", "Only Melee", client);
 			}
 			default: // usually 0
 			{
@@ -1253,7 +1253,7 @@ public MenuHandler_EditZone(Handle:menu, MenuAction:action, client, param)
 				// Don't allow the melee only option and allow 'all weapons again' to be chosen, since they require sdkhooks
 				if (!LibraryExists("sdkhooks"))
 				{
-					punishmentCount = 3;
+					punishmentCount = 4;
 				}
 
 				real_punishment++;
