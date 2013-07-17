@@ -1,0 +1,215 @@
+"Phrases"
+{
+	"Setup Zones"
+	{
+		"de"			"Erstelle Zonen"
+	}
+	"Setup Zones For"
+	{
+		"de"			"Erstelle Zone fuer {1}"
+	}
+	"Zone Edge"
+	{
+		"de"			"Druecke die \"E\"-Taste um eine Zone zu setzen."
+	}
+	"Type Zone Name"
+	{
+		"de"			"Bitte schreibe einen Namen fuer diese Zone in den Chat. Schreibe !stop um abzubrechen."
+	}
+	"Abort Zone Name"
+	{
+		"de"			"Namensgebung der neuen Zone wurde abgebrochen und die Zone wurde entfernt."
+	}
+	"Abort Zone Rename"
+	{
+		"de"			"Umbenennen der Zone wurde gestoppt."
+	}
+	"Adding Zone"
+	{
+		"de"			"Zone Hinzufuegen:"
+	}
+	"Confirm Delete Zone"
+	{
+		"de"			"Willst Du wirklich \"{1}\" loeschen?"
+	}
+	"Save"
+	{
+		"de"			"Speichern"
+	}
+	"Name Already Taken"
+	{
+		"de"			"Eine Zone mit dem Namen \"{1}\" existiert bereits. Bitte verwende einen anderen Namen."
+	}
+	"Saved"
+	{
+		"de"			"Aenderungen erfolgreich gespeichert."
+	}
+	"Discard"
+	{
+		"de"			"Ablegen"
+	}
+	"Discarded"
+	{
+		"de"			"Abgelegt."
+	}
+	"Delete Zone"
+	{
+		"de"			"Zone loechen"
+	}
+	"Deleted Zone"
+	{
+		"de"			"Zone \"{1}\" erfolgreich geloescht."
+	}
+	"Deleted Fence"
+	{
+		"de"			"Zaun \"{1}\" erfolgreich geloescht."
+	}
+	"Canceled Fence Deletion"
+	{
+		"de"			"Loeschung des Zauns abgebrochen."
+	}
+	"Canceled Zone Deletion"
+	{
+		"de"			"Loeschung der Zone abgebrochen."
+	}
+	"Name Edited"
+	{
+		"de"			"Name erfolgreich editiert."
+	}
+	"Activate Zones"
+	{
+		"de"			"Zone aktivieren"
+	}
+	"Diactivate Zones"
+	{
+		"de"			"Zone deaktivieren"
+	}
+	"Activated Zones"
+	{
+		"de"			"Aktivierte Zonen"
+	}
+	"Diactivated Zones"
+	{
+		"de"			"Deaktivierte Zonen"
+	}
+	"Active Zones"
+	{
+		"de"			"Aktive Zonen einrichten"
+	}
+	"Add Zones"
+	{
+		"de"			"Zone hinzufuegen"
+	}
+	"Add Zone Instruction"
+	{
+		"de"			"Druecke die \"E\" - Taste um eine weitere Zone zu Deinen Fuessen zu setzen, welche die diagonal gegenueberliegende Ecke der Zone bildet."
+	}
+	"Manage Zone"
+	{
+		"de"			"Verwalte Zone {1}:"
+	}
+	"Edit First Point"
+	{
+		"de"			"Ersten Punkt bearbeiten"
+	}
+	"Edit Second Point"
+	{
+		"de"			"Zweiten Punkt bearbeiten"
+	}
+	"Edit Name"
+	{
+		"de"			"Name bearbeiten"
+	}
+	"Teleport To"
+	{
+		"de"			"Teleportiere zu"
+	}
+	"Both"
+	{
+		"de"			"Beide"
+	}
+	"Trigger Team"
+	{
+		"de"			"Team: {1}"
+	}
+	"Edit Zone"
+	{
+		"de"			"{1} bei Position {2} bearbeiten:"
+	}
+	"Add to X"
+	{
+		"de"			"Zu X hinzufuegen"
+	}
+	"Add to Y"
+	{
+		"de"			"Zu Y hinzufuegen"
+	}
+	"Add to Z"
+	{
+		"de"			"Zu Z hinzufuegen"
+	}
+	"Subtract from X"
+	{
+		"de"			"Von X abziehen"
+	}
+	"Subtract from Y"
+	{
+		"de"			"Von Y abziehen"
+	}
+	"Subtract from Z"
+	{
+		"de"			"Von Z abziehen"
+	}
+	"Player Entered Zone"
+	{
+		"de"			"{1} hat geschuetzte Zone \"{2}\" betreten."
+	}
+	"Player Slayed"
+	{
+		"de"			"{1} wurde fuer das betreten der geschuetzten Zone \"{2}\" erschlagen."
+	}
+	"Can use melee"
+	{
+		"de"			"Du kannst nur Nahkampfwaffen nutzen, waehrend Du in dieser Zone bist."
+	}
+	"Can use any weapon"
+	{
+		"de"			"Du kannst nun jede Waffe nutzen."
+	}
+	"Cant shoot"
+	{
+		"de"			"Du kannst nicht schiessen, waehrend Du in dieser Zone stehst."
+	}
+	"Can shoot"
+	{
+		"de"			"Du kannst nun schiessen."
+	}
+	"Punishment"
+	{
+		"de"			"Strafe"
+	}
+	"Default"
+	{
+		"de"			"Standard"
+	}
+	"Print Message"
+	{
+		"de"			"Schreibe Nachricht in den Chat"
+	}
+	"Bounce Back"
+	{
+		"de"			"Spieler zurueck druecken"
+	}
+	"Only Melee"
+	{
+		"de"			"Ausschließlich Nahkampf erlauben"
+	}
+	"No shooting"
+	{
+		"de"			"Nicht schiessen"
+	}
+	"Custom Punishment"
+	{
+		"de"			"Eigen"
+	}
+}
