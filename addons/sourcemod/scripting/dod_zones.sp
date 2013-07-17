@@ -142,17 +142,17 @@ public OnPluginStart()
 	CreateConVar("sm_antirush_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a restricted zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay\n4 = Allow melee only\n5 = Dont allow to shoot", FCVAR_PLUGIN, true, 1.0, true, 5.0);
-	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not always show the zones on a map", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
-	// Needed to define zone name or cancel/stop creating
+	// Needed to define zone name (or rename) and for cancelling name operation
 	AddCommandListener(Command_Chat, "say");
 	AddCommandListener(Command_Chat, "say_team");
 
 	// Register admin commands, which is requires config flag to use
 	RegAdminCmd("sm_zones",     Command_SetupZones,     ADMFLAG_CONFIG, "Opens zones main menu");
-	RegAdminCmd("sm_actzone",   Command_ActivateZone,   ADMFLAG_CONFIG, "Activates a zone");
-	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone");
+	RegAdminCmd("sm_actzone",   Command_ActivateZone,   ADMFLAG_CONFIG, "Activates a zone by name");
+	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone by name");
 
 	// Hook events
 	HookEvent("player_death",    OnPlayerDeath);
@@ -426,7 +426,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				switch (real_punishment)
 				{
 					// Just tell everybody
-					case ANNOUNCE: PrintToChatAll("%s%t", PREFIX, "Player Entered Zone", activator, targetname[9]);
+					case ANNOUNCE: if (StrEqual(output, "OnStartTouch", false)) PrintToChatAll("%s%t", PREFIX, "Player Entered Zone", activator, targetname[9]);
 					case BOUNCE:
 					{
 						if (StrEqual(output, "OnStartTouch", false))
