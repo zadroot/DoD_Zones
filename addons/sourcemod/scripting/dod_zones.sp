@@ -12,25 +12,24 @@
 
 // ====[ INCLUDES ]==========================================================
 #include <sdktools>
-
-#undef REQUIRE_EXTENSIONS
 #include <sdkhooks>
+
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
 
 // ====[ CONSTANTS ]=========================================================
-#define PLUGIN_NAME      "DoD:S Zones"
-#define PLUGIN_VERSION   "1.1"
+#define PLUGIN_NAME       "DoD:S Zones"
+#define PLUGIN_VERSION    "1.1"
 
-#define SLOT_MELEE       2
-#define DOD_MAXPLAYERS   33
-#define DOD_MAXWEAPONS   47
-#define MAX_ZONE_LENGTH  64
+#define SLOT_MELEE        2
+#define DOD_MAXPLAYERS    33
+#define DOD_MAXWEAPONS    47
+#define MAX_ZONE_LENGTH   64
 
-#define DEFAULT_INTERVAL 5.0
+#define LIFETIME_INTERVAL 5.0
 
-#define ZONES_MODEL      "models/error.mdl"
-#define PREFIX           "\x01[\x04DoD:S Zones\x01] >> \x07FFFF00"
+#define ZONES_MODEL       "models/error.mdl"
+#define PREFIX            "\x01[\x04DoD:S Zones\x01] >> \x07FFFF00"
 
 enum
 {
@@ -60,9 +59,18 @@ enum
 	BOUNCE,
 	SLAY,
 	NOSHOOT,
-	MELEE,
+	MELEE
+}
 
-	PUNISHMENTS_SIZE
+enum
+{
+	ZONE_NAME,
+	ZONE_COORDS1,
+	ZONE_COORDS2,
+	ZONE_TEAM,
+	ZONE_PUNISHMENT,
+
+	ZONEARRAY_SIZE
 }
 
 enum
@@ -114,17 +122,6 @@ public Plugin:myinfo =
 }
 
 
-/* AskPluginLoad2()
- *
- * Called before plugin starts.
- * -------------------------------------------------------------------------- */
-public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
-{
-	// Makes SDKHooks as optional
-	MarkNativeAsOptional("SDKHook");
-	return APLRes_Success;
-}
-
 /**
  * --------------------------------------------------------------------------
  *     ____           ______                  __  _
@@ -142,7 +139,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
  * -------------------------------------------------------------------------- */
 public OnPluginStart()
 {
-	// I'd use Peace-Maker's "Anti-Rush" version ConVar, but if I will do that, plugin will not be approved
+	// Create ConVars
 	CreateConVar("dod_zones_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 
 	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
@@ -150,11 +147,11 @@ public OnPluginStart()
 	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not always show the zones on a map", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
-	// Needed to name or rename a zone
+	// For name/rename a zone
 	AddCommandListener(Command_Chat, "say");
 	AddCommandListener(Command_Chat, "say_team");
 
-	// Punishment hotfix
+	// Hotfix for weapon punishments
 	AddCommandListener(Command_Drop, "drop");
 
 	// Register admin commands, which is requires config flag
@@ -166,7 +163,7 @@ public OnPluginStart()
 	HookEvent("player_death",    OnPlayerDeath);
 	HookEvent("dod_round_start", OnRoundStart, EventHookMode_PostNoCopy);
 
-	// Load plugin translations
+	// Translations
 	LoadTranslations("common.phrases");
 	LoadTranslations("playercommands.phrases");
 	LoadTranslations("dod_zones.phrases");
@@ -209,7 +206,7 @@ public OnPluginStart()
  * -------------------------------------------------------------------------- */
 public OnAdminMenuReady(Handle:topmenu)
 {
-	// Block menu handle from being called more than once
+	// Block menu handle from being called twice
 	if (topmenu == AdminMenuHandle)
 	{
 		return;
@@ -222,7 +219,6 @@ public OnAdminMenuReady(Handle:topmenu)
 
 	if (server_commands == INVALID_TOPMENUOBJECT)
 	{
-		// Error!
 		return;
 	}
 
@@ -255,7 +251,7 @@ public OnMapStart()
 	ParseZoneConfig();
 
 	// Create global repeatable timer to show zones
-	CreateTimer(DEFAULT_INTERVAL, Timer_ShowZones, _, TIMER_FLAG_NO_MAPCHANGE|TIMER_REPEAT);
+	CreateTimer(LIFETIME_INTERVAL, Timer_ShowZones, _, TIMER_FLAG_NO_MAPCHANGE|TIMER_REPEAT);
 }
 
 /* OnClientPutInServer()
@@ -264,7 +260,7 @@ public OnMapStart()
  * -------------------------------------------------------------------------- */
 public OnClientPutInServer(client)
 {
-	// Optionally hook some weapon forwards for knife only punishment
+	// Optionally hook some weapon forwards for weapon punishments
 	SDKHook(client, SDKHook_WeaponSwitch, OnWeaponUsage);
 	SDKHook(client, SDKHook_WeaponCanUse, OnWeaponUsage);
 	SDKHook(client, SDKHook_WeaponEquip,  OnWeaponUsage);
@@ -276,7 +272,7 @@ public OnClientPutInServer(client)
  * -------------------------------------------------------------------------- */
 public OnClientDisconnect(client)
 {
-	// Reset everything for this client
+	// Reset everything
 	ZonePoint[client]   = NO_POINT;
 	EditingZone[client] = EditingVector[client] = INIT;
 
@@ -310,7 +306,6 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
 				FirstZoneVector[client][1] = origin[1];
 				FirstZoneVector[client][2] = origin[2];
 
-				// Notify client
 				PrintToChat(client, "%s%t", PREFIX, "Zone Edge");
 			}
 			else if (ZonePoint[client] == SECOND_POINT)
@@ -341,10 +336,10 @@ public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:ang
  * -------------------------------------------------------------------------- */
 public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
-	// Plugin is enabled?
+	// Does plugin is enabled?
 	if (GetConVarBool(zones_enabled))
 	{
-		decl String:class[MAX_ZONE_LENGTH], zone;
+		decl String:class[MAX_ZONE_LENGTH], zone, z;
 		zone = INIT; // Faster and better than for (new i = MaxClients; i < GetMaxEntities(); i++)
 		while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
 		{
@@ -358,9 +353,9 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 		}
 
 		// Then re-create zones depends on array size
-		for (new j = 0; j < GetArraySize(ZonesArray); j++)
+		for (z = 0; z < GetArraySize(ZonesArray); z++)
 		{
-			SpawnZone(j);
+			SpawnZone(z);
 		}
 	}
 }
@@ -383,8 +378,8 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 {
 	if (GetConVarBool(zones_enabled))
 	{
-		// Ignore invalid activators
-		if (activator > 0 && activator <= MaxClients)
+		// Deal with valid 'activators'
+		if (activator && activator <= MaxClients)
 		{
 			if (IsClientInGame(activator) && IsPlayerAlive(activator))
 			{
@@ -396,28 +391,28 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				}
 
 				// Get the name of a zone
-				decl String:targetname[128], String:ZoneName[MAX_ZONE_LENGTH];
+				decl String:targetname[MAX_ZONE_LENGTH+10], String:ZoneName[MAX_ZONE_LENGTH];
 				GetEntPropString(caller, Prop_Data, "m_iName", targetname, sizeof(targetname));
 
-				// Initialize punishments
+				// init punishments
 				new punishment = INIT;
 				new real_punishment = GetConVarInt(zones_punishment);
 
-				// Check whether or not that was StartTouch
+				// Check whether or not that was StartTouch callback
 				new bool:StartTouch = StrEqual(output, "OnStartTouch", false);
 
 				// Loop through all available zones
 				for (new i = 0; i < GetArraySize(ZonesArray); i++)
 				{
 					new Handle:hZone = GetArrayCell(ZonesArray, i);
-					GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+					GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
 					// Ignore 'dod_zone ' prefix and check what zone we touched
 					if (StrEqual(ZoneName, targetname[9], false))
 					{
 						// Then retrieve team and punishment
-						new team   = GetArrayCell(hZone, 3);
-						punishment = GetArrayCell(hZone, 4);
+						new team   = GetArrayCell(hZone, ZONE_TEAM);
+						punishment = GetArrayCell(hZone, ZONE_PUNISHMENT);
 						if (team != TEAM_ALL && GetClientTeam(activator) != team)
 						{
 							// If team doesnt match, skip punishments
@@ -440,7 +435,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 					{
 						if (StartTouch)
 						{
-							// Bounce actovator back
+							// Bounce activator back
 							decl Float:vel[3];
 
 							vel[0] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[0]");
@@ -482,7 +477,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							PrintToChat(activator, "%s%t", PREFIX, "Can't shoot");
 							WeaponPunishment[activator] = true;
 						}
-						else // Nope - player left
+						else // Nope - player just left zone
 						{
 							PrintToChat(activator, "%s%t", PREFIX, "Can shoot");
 							WeaponPunishment[activator] = false;
@@ -493,21 +488,22 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						{
 							// Retrieve the all weapons of a player
 							new weapons = GetEntDataEnt2(activator, m_hMyWeapons + (i * 4));
+							new Float:time = GetGameTime();
 
-							// Valid?
+							// Weapon is okay?
 							if (weapons != -1)
 							{
 								if (StartTouch)
 								{
 									// Then dont allow player to shoot by those weapons
-									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   GetGameTime() + 999.9);
-									SetEntDataFloat(weapons, m_flNextSecondaryAttack, GetGameTime() + 999.9);
+									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   time + 999.9);
+									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time + 999.9);
 								}
 								else
 								{
 									// Otherwise if player left a zone - allow shooting
-									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   GetGameTime());
-									SetEntDataFloat(weapons, m_flNextSecondaryAttack, GetGameTime());
+									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   time);
+									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time);
 								}
 							}
 						}
@@ -538,10 +534,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							WeaponPunishment[activator] = false;
 						}
 					}
-					default:
-					{
-						//custom punishment will be inserted later
-					}
+					// default: custom punishment will be added later
 				}
 			}
 		}
@@ -576,11 +569,9 @@ public Action:OnWeaponUsage(client, weapon)
  * -------------------------------------------------------------------------- */
 public Action:Command_Chat(client, const String:command[], args)
 {
-	// Retrieve the argument of say commands (a text)
-	decl String:text[192];
+	// Retrieve the argument of say commands (a text) and strip quotes
+	decl String:text[MAX_ZONE_LENGTH];
 	GetCmdArgString(text, sizeof(text));
-
-	// Strip quotes
 	StripQuotes(text);
 
 	// When player is about to name a zone
@@ -627,10 +618,10 @@ public Action:Command_Chat(client, const String:command[], args)
 		new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
 
 		// Get the old name of a zone
-		GetArrayString(hZone, 0, OldZoneName, sizeof(OldZoneName));
+		GetArrayString(hZone, ZONE_NAME, OldZoneName, sizeof(OldZoneName));
 
 		// And set to a new one
-		SetArrayString(hZone, 0, text);
+		SetArrayString(hZone, ZONE_NAME, text);
 
 		// Re-spawn an entity again
 		SpawnZone(EditingZone[client]);
@@ -646,7 +637,7 @@ public Action:Command_Chat(client, const String:command[], args)
 		FileToKeyValues(kv, config);
 		if (!KvGotoFirstSubKey(kv))
 		{
-			// Whoops something wrong with a config!
+			// Whoops something wrong with a config
 			PrintToChat(client, "%sConfig file is empty. Can't edit it permanently!", PREFIX);
 			CloseHandle(kv);
 
@@ -656,7 +647,7 @@ public Action:Command_Chat(client, const String:command[], args)
 		}
 
 		// Otherwise find the zone to edit
-		decl String:buffer[PLATFORM_MAX_PATH];
+		decl String:buffer[MAX_ZONE_LENGTH];
 		KvGetSectionName(kv, buffer, sizeof(buffer));
 		do
 		{
@@ -729,14 +720,13 @@ public Action:Command_ActivateZone(client, args)
 
 	// Show diactivated zones menu to valid client
 	ShowDiactivatedZonesMenu(client);
-
 	return Plugin_Handled;
 }
 
 /* Command_DiactivateZone()
  *
  * Diactivates an active zone.
- * Note: Zone is just disabling, not killing zones at all.
+ * Note: It just disabling zones, not killing them at all.
  * -------------------------------------------------------------------------- */
 public Action:Command_DiactivateZone(client, args)
 {
@@ -775,14 +765,9 @@ public AdminMenu_Zones(Handle:topmenu, TopMenuAction:action, TopMenuObject:objec
 {
 	switch (action)
 	{
-		// Display Menu selection item
-		case TopMenuAction_DisplayOption:
-		{
-			// A name of the 'ServerCommands' category
-			Format(buffer, maxlength, "%T", "Setup Zones", param);
-		}
-		// Call zones main menu on selection
-		case TopMenuAction_SelectOption: ShowZonesMainMenu(param);
+		// // A name of the 'ServerCommands' category
+		case TopMenuAction_DisplayOption: Format(buffer, maxlength, "%T", "Setup Zones", param);
+		case TopMenuAction_SelectOption:  ShowZonesMainMenu(param);
 	}
 }
 
@@ -835,7 +820,7 @@ public Menu_Zones(Handle:menu, MenuAction:action, client, param)
 {
 	if (action == MenuAction_Select)
 	{
-		decl String:info[32];
+		decl String:info[17];
 
 		// Retrieve info of menu item
 		GetMenuItem(menu, param, info, sizeof(info));
@@ -862,7 +847,7 @@ public Menu_Zones(Handle:menu, MenuAction:action, client, param)
 			ShowDiactivatedZonesMenu(client);
 		}
 
-		// If not - use latest one
+		// If not - then its a lates one, I believe
 		else if (StrEqual(info, "diactivate_zones", false))
 		{
 			// Diactivate zones
@@ -888,16 +873,16 @@ ShowActiveZonesMenu(client)
 	// Set menu title
 	SetMenuTitle(menu, "%T:", "Active Zones", client);
 
-	decl String:buffer[PLATFORM_MAX_PATH], String:strnum[8];
+	decl String:name[PLATFORM_MAX_PATH], String:strnum[8];
 	for (new i = 0; i < GetArraySize(ZonesArray); i++)
 	{
 		// Loop through all zones in array
 		new Handle:hZone = GetArrayCell(ZonesArray, i);
-		GetArrayString(hZone, 0, buffer, sizeof(buffer));
+		GetArrayString(hZone, ZONE_NAME, name, sizeof(name));
 
 		// Add every zone as a menu item
 		IntToString(i, strnum, sizeof(strnum));
-		AddMenuItem(menu, strnum, buffer);
+		AddMenuItem(menu, strnum, name);
 	}
 
 	// Add exit button
@@ -915,7 +900,7 @@ public Menu_ActiveZones(Handle:menu, MenuAction:action, client, param)
 	{
 		case MenuAction_Select:
 		{
-			decl String:info[32], zone;
+			decl String:info[8], zone;
 			GetMenuItem(menu, param, info, sizeof(info));
 
 			// Define a zone number
@@ -955,8 +940,7 @@ ShowActivatedZonesMenu(client)
 	zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
 	{
-		if (IsValidEntity(zone)
-		&& !GetEntProp(zone, Prop_Data, "m_bDisabled") // Dont add diactivated zones into menu
+		if (IsValidEntity(zone) && !GetEntProp(zone, Prop_Data, "m_bDisabled") // Dont add diactivated zones
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
 		&& StrContains(class, "dod_zone") != -1)
 		{
@@ -1008,18 +992,17 @@ ShowDiactivatedZonesMenu(client)
 	new Handle:menu = CreateMenu(Menu_DiactivatedZones);
 	SetMenuTitle(menu, "%T:", "Activated Zones", client);
 
+	// declare
 	decl String:class[MAX_ZONE_LENGTH], zone;
-
 	zone = INIT;
 
-	// Search for any zones on a map ( trigger_multiple entity )
+	// Search for any zones on a map
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
 	{
-		// If we found a zone, make sure its valid
-		if (IsValidEntity(zone)
-		&& GetEntProp(zone, Prop_Data, "m_bDisabled")
-		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class)) // Retrieve m_iName string
-		&& StrContains(class, "dod_zone") != -1) // Does that contains 'dod_zone' prefix?
+		// If we found a zone, make sure its not diactivated
+		if (IsValidEntity(zone) && GetEntProp(zone, Prop_Data, "m_bDisabled")
+		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
+		&& StrContains(class, "dod_zone") != -1) // Does name contains 'dod_zone' prefix?
 		{
 			// Add every disabled zone into diactivated menu
 			AddMenuItem(menu, class[9], class[9]);
@@ -1076,10 +1059,10 @@ ShowZoneOptionsMenu(client)
 		decl String:ZoneName[MAX_ZONE_LENGTH], String:translation[128], String:buffer[128];
 
 		new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
-		GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+		GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
 		// Get zone team restrictions
-		new team = GetArrayCell(hZone, 3);
+		new team = GetArrayCell(hZone, ZONE_TEAM);
 
 		// Create menu handler and set menu title
 		new Handle:menu = CreateMenu(Menu_ZoneOptions);
@@ -1111,38 +1094,16 @@ ShowZoneOptionsMenu(client)
 		AddMenuItem(menu, "team", translation);
 
 		// Retrieve a punishment
-		switch (GetArrayCell(hZone, 4))
+		switch (GetArrayCell(hZone, ZONE_PUNISHMENT))
 		{
 			// No individual zones_punishment selected. Using default one (which is defined in ConVar)
-			case DEFAULT:
-			{
-				Format(buffer, sizeof(buffer), "%T", "Default", client);
-			}
-			case ANNOUNCE:
-			{
-				Format(buffer, sizeof(buffer), "%T", "Print Message", client);
-			}
-			case BOUNCE:
-			{
-				Format(buffer, sizeof(buffer), "%T", "Bounce Back", client);
-			}
-			case SLAY:
-			{
-				Format(buffer, sizeof(buffer), "%T", "Slay player", client);
-			}
-			case NOSHOOT:
-			{
-				Format(buffer, sizeof(buffer), "%T", "No shooting", client);
-			}
-			case MELEE:
-			{
-				Format(buffer, sizeof(buffer), "%T", "Only Melee", client);
-			}
-			default: // usually 0
-			{
-				// Custom punishment will be available later
-				Format(buffer, sizeof(buffer), "%T", "Custom Punishment", client);
-			}
+			case DEFAULT:  Format(buffer, sizeof(buffer), "%T", "Default",       client);
+			case ANNOUNCE: Format(buffer, sizeof(buffer), "%T", "Print Message", client);
+			case BOUNCE:   Format(buffer, sizeof(buffer), "%T", "Bounce Back",   client);
+			case SLAY:     Format(buffer, sizeof(buffer), "%T", "Slay player",   client);
+			case NOSHOOT:  Format(buffer, sizeof(buffer), "%T", "No shooting",   client);
+			case MELEE:    Format(buffer, sizeof(buffer), "%T", "Only Melee",    client);
+			//default:       Format(buffer, sizeof(buffer), "%T", "Custom Punishment", client);
 		}
 
 		// Update punishment info
@@ -1165,12 +1126,13 @@ ShowZoneOptionsMenu(client)
  * -------------------------------------------------------------------------- */
 public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 {
+	// Retrieve the menu action
 	switch (action)
 	{
 		case MenuAction_Select:
 		{
 			// Get a config, menu item info and initialize everything else
-			decl String:config[PLATFORM_MAX_PATH], String:ZoneName[MAX_ZONE_LENGTH], String:info[MAX_ZONE_LENGTH], Float:vec1[3], Float:vec2[3], color[4];
+			decl String:config[PLATFORM_MAX_PATH], String:ZoneName[MAX_ZONE_LENGTH], String:info[11], Float:vec1[3], Float:vec2[3], color[4];
 			GetMenuItem(menu, param, info, sizeof(info));
 			BuildPath(Path_SM, config, sizeof(config), "data/zones/%s.cfg", map);
 
@@ -1178,14 +1140,14 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 			new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
 
 			// Retrieve vectors and a name
-			GetArrayArray(hZone, FIRST_VECTOR,  vec1, VECTORS_SIZE);
-			GetArrayArray(hZone, SECOND_VECTOR, vec2, VECTORS_SIZE);
-			GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+			GetArrayArray(hZone,  FIRST_VECTOR,  vec1, VECTORS_SIZE);
+			GetArrayArray(hZone,  SECOND_VECTOR, vec2, VECTORS_SIZE);
+			GetArrayString(hZone, ZONE_NAME,     ZoneName, sizeof(ZoneName));
 
-			// Get the team
-			new team = GetArrayCell(hZone, 3);
+			// Get the team restrictions
+			new team = GetArrayCell(hZone, ZONE_TEAM);
 
-			// Teleport player in center of a zone if selected
+			// Now teleport player in center of a zone
 			if (StrEqual(info, "teleport", false))
 			{
 				decl Float:origin[3];
@@ -1236,14 +1198,14 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				}
 
 				// Set the team in array
-				SetArrayCell(hZone, 3, team);
+				SetArrayCell(hZone, ZONE_TEAM, team);
 
 				// Write changes into config
 				new Handle:kv = CreateKeyValues("Zones");
 				FileToKeyValues(kv, config);
 				if (!KvGotoFirstSubKey(kv))
 				{
-					// Wtf?! Config is not available or broken? Stop function then!
+					// Config is not available or broken? Dont do anything then
 					CloseHandle(kv);
 					ShowZoneOptionsMenu(client);
 					PrintToChat(client, "%sConfig file is empty. Can't edit it permanently!", PREFIX);
@@ -1251,11 +1213,11 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				}
 
 				// Get the section name
-				decl String:buffer[PLATFORM_MAX_PATH];
+				decl String:buffer[MAX_ZONE_LENGTH];
 				KvGetSectionName(kv, buffer, sizeof(buffer));
 				do
 				{
-					// Does zone names is same?
+					// Does zone names is not the same?
 					KvGetString(kv, "zone_ident", buffer, sizeof(buffer));
 					if (StrEqual(buffer, ZoneName, false))
 					{
@@ -1283,29 +1245,22 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 			else if (StrEqual(info, "punishment", false))
 			{
 				// Switch through the zones_punishments
-				new real_punishment = GetArrayCell(hZone, 4);
-				new max_punishment  = PUNISHMENTS_SIZE - 1;
-
-				// Don't allow the melee only option to be chosen, since it requires sdkhooks
-				if (!LibraryExists("sdkhooks"))
-				{
-					max_punishment = NOSHOOT;
-				}
+				new real_punishment = GetArrayCell(hZone, ZONE_PUNISHMENT);
 
 				real_punishment++;
-				if (real_punishment > max_punishment)
+				if (real_punishment > MELEE)
 				{
 					// Re-init punishments on overbounds
 					real_punishment = INIT;
 				}
-				else if (real_punishment < 1)
+				else if (real_punishment < ANNOUNCE)
 				{
 					// Same here
-					real_punishment = 1;
+					real_punishment = ANNOUNCE;
 				}
 
 				// Set punishment in array
-				SetArrayCell(hZone, 4, real_punishment);
+				SetArrayCell(hZone, ZONE_PUNISHMENT, real_punishment);
 
 				new Handle:kv = CreateKeyValues("Zones");
 				FileToKeyValues(kv, config);
@@ -1320,7 +1275,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				}
 
 				// Get the name of a zone in KeyValues config
-				decl String:buffer[PLATFORM_MAX_PATH];
+				decl String:buffer[MAX_ZONE_LENGTH];
 				KvGetSectionName(kv, buffer, sizeof(buffer));
 				do
 				{
@@ -1359,9 +1314,9 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 					// Define a color depends on team
 					switch (team)
 					{
-						case TEAM_ALLIES: color = { 255, 0, 0, 255 };
-						case TEAM_AXIS:   color = { 0, 255, 0, 255 };
-						default:          color = { 255, 255, 255, 255};
+						case TEAM_ALLIES: color = { 255, 0,   0,   255 };
+						case TEAM_AXIS:   color = { 0,   255, 0,   255 };
+						default:          color = { 255, 255, 255, 255 };
 					}
 
 					// Clear vectors on every selection
@@ -1374,17 +1329,17 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				}
 
 				// Always show a zone box
-				TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, 5.0, 5.0, 5.0, 2, 1.0, color, 0);
+				TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
 
 				// Highlight the currently edited edge for players editing a zone
 				if (EditingVector[client] == FIRST_VECTOR)
 				{
-					TE_SetupGlowSprite(FirstZoneVector[client], GlowSprite, 5.0, 1.0, 100);
+					TE_SetupGlowSprite(FirstZoneVector[client], GlowSprite, LIFETIME_INTERVAL, 1.0, 100);
 					TE_SendToClient(client);
 				}
 				else //if (EditingVector[client] == SECOND_VECTOR)
 				{
-					TE_SetupGlowSprite(SecondZoneVector[client], GlowSprite, 5.0, 1.0, 100);
+					TE_SetupGlowSprite(SecondZoneVector[client], GlowSprite, LIFETIME_INTERVAL, 1.0, 100);
 					TE_SendToClient(client);
 				}
 
@@ -1402,8 +1357,9 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				// Create confirmation panel
 				new Handle:panel = CreatePanel();
 
-				// Draw a panel with 'Yes/No' options
 				decl String:buffer[128];
+
+				// Draw a panel with only 'Yes/No' options
 				Format(buffer, sizeof(buffer), "%T", "Confirm Delete Zone", client, ZoneName);
 				SetPanelTitle(panel, buffer);
 
@@ -1413,7 +1369,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				Format(buffer, sizeof(buffer), "%T", "No", client);
 				DrawPanelItem(panel, buffer);
 
-				// Send panel for 20 seconds
+				// Send panel
 				SendPanelToClient(panel, client, Panel_Confirmation, MENU_TIME_FOREVER);
 
 				// Close panel handler
@@ -1448,20 +1404,19 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 ShowZoneVectorEditMenu(client)
 {
 	// Make sure player is not editing any other zone at this moment
-	if (EditingZone[client]  != INIT
-	|| EditingVector[client] != INIT)
+	if (EditingZone[client]   != INIT
+	||  EditingVector[client] != INIT)
 	{
 		// Initialize translation string
 		decl String:ZoneName[MAX_ZONE_LENGTH], String:translation[128];
 
 		// Get the zone name
 		new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
-		GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+		GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
 		new Handle:menu = CreateMenu(Menu_ZoneVectorEdit);
 		SetMenuTitle(menu, "%T", "Edit Zone", client, ZoneName, EditingVector[client]);
 
-		// Add 7 items in coordinates menu
 		Format(translation, sizeof(translation), "%T", "Add to X", client);
 		AddMenuItem(menu, "ax", translation);
 
@@ -1482,6 +1437,7 @@ ShowZoneVectorEditMenu(client)
 		Format(translation, sizeof(translation), "%T", "Subtract from Z", client);
 		AddMenuItem(menu, "sz", translation);
 
+		// And add save option
 		Format(translation, sizeof(translation), "%T", "Save", client);
 		AddMenuItem(menu, "save", translation);
 
@@ -1501,7 +1457,7 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 	{
 		case MenuAction_Select:
 		{
-			decl String:info[32], color[4];
+			decl String:info[5], color[4];
 			GetMenuItem(menu, param, info, sizeof(info));
 
 			// Save the new coordinates to the file and the array
@@ -1513,22 +1469,22 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 				new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
 
 				// Retrieve zone name and appropriately set zone vector (client info) on every selection
-				GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+				GetArrayString(hZone, ZONE_NAME,     ZoneName, sizeof(ZoneName));
 				SetArrayArray(hZone,  FIRST_VECTOR,  FirstZoneVector[client],  VECTORS_SIZE);
 				SetArrayArray(hZone,  SECOND_VECTOR, SecondZoneVector[client], VECTORS_SIZE);
 
 				// Get team
-				new team = GetArrayCell(hZone, 3);
+				new team = GetArrayCell(hZone, ZONE_TEAM);
 
 				// Change colors appropriately
 				switch (team)
 				{
-					case TEAM_ALLIES: color = { 255, 0, 0, 255 }; // Red
-					case TEAM_AXIS:   color = { 0, 255, 0, 255 }; // Green
-					default:          color = { 255, 255, 255, 255}; // White
+					case TEAM_ALLIES: color = { 255, 0,   0,   255 }; // Red
+					case TEAM_AXIS:   color = { 0,   255, 0,   255 }; // Green
+					default:          color = { 255, 255, 255, 255 }; // White
 				}
 
-				// Re-spawn zone when its saved
+				// Re-spawn zone when its saved (its better, trust me)
 				KillZone(EditingZone[client]);
 				SpawnZone(EditingZone[client]);
 
@@ -1542,7 +1498,7 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 				new Handle:kv = CreateKeyValues("Zones");
 				FileToKeyValues(kv, config);
 
-				// Make sure config is valid
+				// But before make sure config is not corrupted
 				if (!KvGotoFirstSubKey(kv))
 				{
 					CloseHandle(kv);
@@ -1553,7 +1509,7 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 					return;
 				}
 
-				decl String:buffer[PLATFORM_MAX_PATH];
+				decl String:buffer[MAX_ZONE_LENGTH];
 				KvGetSectionName(kv, buffer, sizeof(buffer));
 
 				// Go thru KV config
@@ -1570,7 +1526,7 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 					}
 				}
 
-				// Until KV is ended
+				// Until config is ended
 				while (KvGotoNextKey(kv));
 
 				KvRewind(kv);
@@ -1638,17 +1594,17 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 			}
 
 			// Always show a zone box on every selection
-			TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, 5.0, 5.0, 5.0, 2, 1.0, color, 0);
+			TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
 
 			// Highlight the currently edited edge for players editing a zone
 			if (EditingVector[client] == FIRST_VECTOR)
 			{
-				TE_SetupGlowSprite(FirstZoneVector[client], GlowSprite, 5.0, 1.0, 100);
+				TE_SetupGlowSprite(FirstZoneVector[client], GlowSprite, LIFETIME_INTERVAL, 1.0, 100);
 				TE_SendToClient(client);
 			}
 			else //if (EditingVector[client] == SECOND_VECTOR)
 			{
-				TE_SetupGlowSprite(SecondZoneVector[client], GlowSprite, 5.0, 1.0, 100);
+				TE_SetupGlowSprite(SecondZoneVector[client], GlowSprite, LIFETIME_INTERVAL, 1.0, 100);
 				TE_SendToClient(client);
 			}
 
@@ -1703,7 +1659,7 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 	{
 		case MenuAction_Select:
 		{
-			decl String:info[32];
+			decl String:info[MAX_ZONE_LENGTH];
 			GetMenuItem(menu, param, info, sizeof(info));
 
 			// Don't save the new zone if player pressed 'Discard' option
@@ -1726,7 +1682,7 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 				new Handle:kv = CreateKeyValues("Zones"), number;
 				FileToKeyValues(kv, config);
 
-				decl String:buffer[PLATFORM_MAX_PATH], String:strnum[8], temp;
+				decl String:buffer[MAX_ZONE_LENGTH], String:strnum[8], temp;
 				if (KvGotoFirstSubKey(kv))
 				{
 					do
@@ -1738,11 +1694,11 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 						// Saving every zone as a number is faster and safer
 						if (temp >= number)
 						{
-							// Set number for zone in config
-							number = temp + 1;
+							// Set another increased number for zone in config
+							number = ++temp;
 						}
 
-						// There is already a zone with this name
+						// Oops there is already a zone with this name
 						KvGetString(kv, "zone_ident", buffer, sizeof(buffer));
 						if (StrEqual(buffer, info, false))
 						{
@@ -1756,14 +1712,14 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 					KvGoBack(kv);
 				}
 
-				// Convert number to a string, becaue every item in KV should be quoted
+				// Convert number to a string (we're dealing with KV)
 				IntToString(number, strnum, sizeof(strnum));
 
 				// Jump to zone number
 				KvJumpToKey(kv, strnum, true);
 
 				// Set name and coordinates
-				KvSetString(kv, "zone_ident", info);
+				KvSetString(kv, "zone_ident",    info);
 				KvSetVector(kv, "coordinates 1", FirstZoneVector[client]);
 				KvSetVector(kv, "coordinates 2", SecondZoneVector[client]);
 
@@ -1773,7 +1729,7 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 				CloseHandle(kv);
 
 				// Store the current vectors to the array
-				new Handle:TempArray = CreateArray(ByteCountToCells(256));
+				new Handle:TempArray = CreateArray(ByteCountToCells(PLATFORM_MAX_PATH));
 
 				// Set the name
 				PushArrayString(TempArray, info);
@@ -1785,7 +1741,7 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 				PushArrayArray(TempArray, SecondZoneVector[client], VECTORS_SIZE);
 
 				// Set the team to both by default
-				PushArrayCell(TempArray, 0);
+				PushArrayCell(TempArray, TEAM_ALL);
 
 				// Set the zones_punishment to default (defined by ConVar)
 				PushArrayCell(TempArray, INIT);
@@ -1807,12 +1763,13 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 		{
 			// When menu is ended - reset everything
 			EditingZone[client] = EditingVector[client] = INIT;
+
 			ClearVector(FirstZoneVector[client]);
 			ClearVector(SecondZoneVector[client]);
 
 			if (param == MenuCancel_ExitBack)
 			{
-				// If player pressed back button, show active zones menu
+				// If player pressed back button, show active zones menu (again)
 				ShowActiveZonesMenu(client);
 			}
 		}
@@ -1829,7 +1786,7 @@ public Panel_Confirmation(Handle:menu, MenuAction:action, client, param)
 	// Client pressed a button
 	if (action == MenuAction_Select)
 	{
-		// Pressed 'Yes'
+		// 'Yes'
 		if (param == 1)
 		{
 			// Kill the trigger_multiple entity (a box)
@@ -1840,13 +1797,13 @@ public Panel_Confirmation(Handle:menu, MenuAction:action, client, param)
 			new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
 
 			// Close array handle
-			GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+			GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 			CloseHandle(hZone);
 
 			// Remove info from array
 			RemoveFromArray(ZonesArray, EditingZone[client]);
 
-			// Set client zone appropriately (to INIT/UNKNOWN)
+			// Reset edited zone appropriately
 			EditingZone[client] = INIT;
 
 			// Delete zone from config file
@@ -1863,12 +1820,11 @@ public Panel_Confirmation(Handle:menu, MenuAction:action, client, param)
 				return;
 			}
 
-			// Everything seems to be fine
-			decl String:buffer[PLATFORM_MAX_PATH];
+			decl String:buffer[MAX_ZONE_LENGTH];
 			KvGetSectionName(kv, buffer, sizeof(buffer));
 			do
 			{
-				// So compare zone names
+				// Compare zone names
 				KvGetString(kv, "zone_ident", buffer, sizeof(buffer));
 				if (StrEqual(buffer, ZoneName, false))
 				{
@@ -1902,7 +1858,7 @@ public Panel_Confirmation(Handle:menu, MenuAction:action, client, param)
 		ShowZoneOptionsMenu(client);
 	}
 
-	// Since its a panel - no need to check MenuAction_End action to close handle
+	// Since its just a panel - no need to check MenuAction_End action to close handle
 }
 
 
@@ -1926,7 +1882,7 @@ public Action:Timer_ShowZones(Handle:timer)
 	// Do the stuff if plugin is enabled
 	if (GetConVarBool(zones_enabled))
 	{
-		// Get all the zones from array
+		// Get all zones
 		for (new i = 0; i < GetArraySize(ZonesArray); i++)
 		{
 			// Initialize positions, color, team index and other stuff
@@ -1937,15 +1893,15 @@ public Action:Timer_ShowZones(Handle:timer)
 			GetArrayArray(hZone, FIRST_VECTOR,  pos1, VECTORS_SIZE);
 			GetArrayArray(hZone, SECOND_VECTOR, pos2, VECTORS_SIZE);
 
-			// And a team
-			team = GetArrayCell(hZone, 3);
+			// Get team
+			team = GetArrayCell(hZone, ZONE_TEAM);
 
 			// Set color for zone respectivitely
 			switch (team)
 			{
-				case TEAM_ALLIES: color = { 255, 0, 0, 255 };
-				case TEAM_AXIS:   color = { 0, 255, 0, 255 };
-				default:          color = { 255, 255, 255, 255};
+				case TEAM_ALLIES: color = { 255, 0,   0,   255 };
+				case TEAM_AXIS:   color = { 0,   255, 0,   255 };
+				default:          color = { 255, 255, 255, 255 };
 			}
 
 			// Loop through all clients
@@ -1956,13 +1912,14 @@ public Action:Timer_ShowZones(Handle:timer)
 					// If player is editing a zones - show all zones then
 					if (EditingZone[client] != INIT)
 					{
-						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, 5.0, 5.0, 5.0, 2, 1.0, color, 0);
+						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
 					}
+
 					// Otherwise always show zones if plugin is set it to true
 					else if (GetConVarBool(show_zones) && (team == TEAM_ALL || (GetClientTeam(client) == team)))
 					{
 						// Also dont show friendly zones at all
-						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, 5.0, 5.0, 5.0, 2, 1.0, color, 0);
+						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
 					}
 				}
 			}
@@ -1984,10 +1941,9 @@ ParseZoneConfig()
 	decl String:config[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, config, sizeof(config), "data/zones/%s.cfg", map);
 
-	// Make sure config is exists
 	if (FileExists(config))
 	{
-		// Create KeyValues handle
+		// Load config for this map if exists
 		new Handle:kv = CreateKeyValues("Zones");
 		FileToKeyValues(kv, config);
 		if (!KvGotoFirstSubKey(kv))
@@ -1997,7 +1953,7 @@ ParseZoneConfig()
 		}
 
 		// Initialize everything, also get the section names
-		decl String:buffer[PLATFORM_MAX_PATH], Handle:TempArray, Float:vector[3], zoneIndex, real_punishment;
+		decl String:buffer[MAX_ZONE_LENGTH], Float:vector[3], Handle:TempArray, zoneIndex, real_punishment;
 		KvGetSectionName(kv, buffer, sizeof(buffer));
 
 		// Go through config for this map
@@ -2019,13 +1975,13 @@ ParseZoneConfig()
 			PushArrayArray(TempArray, vector, VECTORS_SIZE);
 
 			// Get the team restrictions
-			new team = KvGetNum(kv, "restrict_team", 0);
+			new team = KvGetNum(kv, "restrict_team", TEAM_ALL);
 			PushArrayCell(TempArray, team);
 
 			// Increase zone count on match
 			switch(team)
 			{
-				// Both teams
+				// For both teams
 				case TEAM_ALL:
 				{
 					TeamZones[TEAM_ALLIES]++;
@@ -2037,12 +1993,6 @@ ParseZoneConfig()
 
 			// Get the punishments
 			real_punishment = KvGetNum(kv, "punishment", DEFAULT);
-
-			// Reset the melee punishment for a zone to default if sdkhooks is not available
-			if (!LibraryExists("sdkhooks") && real_punishment >= MELEE)
-			{
-				real_punishment = DEFAULT;
-			}
 
 			// Add punishments into temporary array
 			PushArrayCell(TempArray, real_punishment);
@@ -2071,7 +2021,7 @@ ParseZoneConfig()
  * -------------------------------------------------------------------------- */
 ActivateZone(const String:text[])
 {
-	decl String:class[MAX_ZONE_LENGTH], zone;
+	decl String:class[MAX_ZONE_LENGTH+10], zone;
 	zone = INIT;
 
 	// Make sure at least one zone entity is exists
@@ -2079,7 +2029,7 @@ ActivateZone(const String:text[])
 	{
 		if (IsValidEntity(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrEqual(class[9], text, false)) // Skip first 9 characters to avoid comparing with 'dod_zone %' prefix
+		&& StrEqual(class[9], text, false)) // Skip first 9 characters to avoid comparing with 'dod_zone' prefix
 		{
 			// Found - activate a zone and break the loop (optimizations)
 			AcceptEntityInput(zone, "Enable");
@@ -2094,7 +2044,7 @@ ActivateZone(const String:text[])
  * -------------------------------------------------------------------------- */
 DiactivateZone(const String:text[])
 {
-	decl String:class[MAX_ZONE_LENGTH], zone;
+	decl String:class[MAX_ZONE_LENGTH+10], zone;
 
 	zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
@@ -2123,34 +2073,35 @@ SpawnZone(zoneIndex)
 	new Handle:hZone = GetArrayCell(ZonesArray, zoneIndex);
 	GetArrayArray(hZone,  FIRST_VECTOR,  m_vecMins, VECTORS_SIZE);
 	GetArrayArray(hZone,  SECOND_VECTOR, m_vecMaxs, VECTORS_SIZE);
-	GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+	GetArrayString(hZone, ZONE_NAME,     ZoneName, sizeof(ZoneName));
 
-	// Create a zone (best one is trigger_multiple)
-	new ent = CreateEntityByName("trigger_multiple");
+	// Create a zone (best entity for that is trigger_multiple)
+	new zone = CreateEntityByName("trigger_multiple");
 
-	// Set spawnflags, name and other useful stuff
-	DispatchKeyValue(ent, "spawnflags", "64");
+	// Set name
 	Format(ZoneName, sizeof(ZoneName), "dod_zone %s", ZoneName);
-	DispatchKeyValue(ent, "targetname", ZoneName);
-	DispatchKeyValue(ent, "wait", "0");
+	DispatchKeyValue(zone, "targetname", ZoneName);
+
+	DispatchKeyValue(zone, "spawnflags", "64");
+	DispatchKeyValue(zone, "wait",       "0");
 
 	// Spawn an entity
-	DispatchSpawn(ent);
+	DispatchSpawn(zone);
 
 	// Since its brush entity, use ActivateEntity as well
-	ActivateEntity(ent);
+	ActivateEntity(zone);
 
 	// Set datamap spawnflags (value means copy origin and angles)
-	SetEntProp(ent, Prop_Data, "m_spawnflags", 64);
+	SetEntProp(zone, Prop_Data, "m_spawnflags", 64);
 
 	// Get the middle of zone
 	GetMiddleOfABox(m_vecMins, m_vecMaxs, middle);
 
 	// Move zone entity in middle of a box
-	TeleportEntity(ent, middle, NULL_VECTOR, NULL_VECTOR);
+	TeleportEntity(zone, middle, NULL_VECTOR, NULL_VECTOR);
 
-	// Set the model (its required)
-	SetEntityModel(ent, ZONES_MODEL);
+	// Set the model (its required!)
+	SetEntityModel(zone, ZONES_MODEL);
 
 	// Have the m_vecMins always be negative
 	m_vecMins[0] = m_vecMins[0] - middle[0];
@@ -2175,22 +2126,22 @@ SpawnZone(zoneIndex)
 		m_vecMaxs[2] *= -1.0;
 
 	// Set mins and maxs for entity
-	SetEntPropVector(ent, Prop_Send, "m_vecMins", m_vecMins);
-	SetEntPropVector(ent, Prop_Send, "m_vecMaxs", m_vecMaxs);
+	SetEntPropVector(zone, Prop_Send, "m_vecMins", m_vecMins);
+	SetEntPropVector(zone, Prop_Send, "m_vecMaxs", m_vecMaxs);
 
 	// Make it non-solid
-	SetEntProp(ent, Prop_Send, "m_nSolidType", 2);
+	SetEntProp(zone, Prop_Send, "m_nSolidType", 2);
 
 	#define EF_NODRAW 0x020
 
-	// Retrieve effects, remove EF_NODRAW and set effects properly (thanks Blodia!)
-	new m_fEffects = GetEntProp(ent, Prop_Send, "m_fEffects");
+	// Make the zone visible by removing EF_NODRAW flag
+	new m_fEffects = GetEntProp(zone, Prop_Send, "m_fEffects");
 	m_fEffects |= EF_NODRAW;
-	SetEntProp(ent, Prop_Send, "m_fEffects", m_fEffects);
+	SetEntProp(zone, Prop_Send, "m_fEffects", m_fEffects);
 
-	// Hook StartTouch entity output
-	HookSingleEntityOutput(ent, "OnStartTouch", OnTouch);
-	HookSingleEntityOutput(ent, "OnEndTouch",   OnTouch);
+	// Hook touch entity outputs
+	HookSingleEntityOutput(zone, "OnStartTouch", OnTouch);
+	HookSingleEntityOutput(zone, "OnEndTouch",   OnTouch);
 }
 
 /* KillZone()
@@ -2199,11 +2150,11 @@ SpawnZone(zoneIndex)
  * -------------------------------------------------------------------------- */
 KillZone(zoneIndex)
 {
-	decl String:ZoneName[MAX_ZONE_LENGTH], String:class[MAX_ZONE_LENGTH], zone;
+	decl String:ZoneName[MAX_ZONE_LENGTH], String:class[MAX_ZONE_LENGTH+10], zone;
 
 	// Get the zone index and name of a zone
 	new Handle:hZone = GetArrayCell(ZonesArray, zoneIndex);
-	GetArrayString(hZone, 0, ZoneName, sizeof(ZoneName));
+	GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
 	zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
@@ -2266,11 +2217,10 @@ bool:IsNullVector(const Float:vec[3])
 	&&  vec[1] == 0.0
 	&&  vec[2] == 0.0)
 	{
-		// All coordinates are 0.0 - vector is null
+		// really vector is null
 		return true;
 	}
 
-	// Otherwise not
 	return false;
 }
 
@@ -2280,7 +2230,7 @@ bool:IsNullVector(const Float:vec[3])
  * -------------------------------------------------------------------------- */
 GetMiddleOfABox(const Float:vec1[3], const Float:vec2[3], Float:buffer[3])
 {
-	// Just make vector from points and divide it by 2
+	// Just make vector from points and half-divide it
 	decl Float:mid[3];
 	MakeVectorFromPoints(vec1, vec2, mid);
 	mid[0] = mid[0] / 2.0;
@@ -2310,7 +2260,7 @@ GetMiddleOfABox(const Float:vec1[3], const Float:vec2[3], Float:buffer[3])
  * @param Speed			Speed of the beam.
  * @noreturn
  */
-TE_SendBeamBoxToClient(client, const Float:upc[3], const Float:btc[3], ModelIndex, HaloIndex, StartFrame, FrameRate, Float:Life, Float:Width, Float:EndWidth, FadeLength, Float:Amplitude, const Color[4], Speed)
+TE_SendBeamBoxToClient(client, const Float:upc[3], const Float:btc[3], ModelIndex, HaloIndex, StartFrame, FrameRate, const Float:Life, const Float:Width, const Float:EndWidth, FadeLength, const Float:Amplitude, const Color[4], Speed)
 {
 	// Create the additional corners of the box
 	new Float:tc1[3];
