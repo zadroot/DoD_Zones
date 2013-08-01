@@ -143,7 +143,7 @@ public OnPluginStart()
 	CreateConVar("dod_zones_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 
 	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce player back\n3 = Slay\n4 = Dont allow to shoot\n5 = Allow only melee weapon", FCVAR_PLUGIN, true, 1.0, true, 5.0);
+	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay player\n4 = Dont allow to shoot\n5 = Allow only melee weapon", FCVAR_PLUGIN, true, 1.0, true, 5.0);
 	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not show the zones on a map all the times", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
