@@ -143,9 +143,9 @@ public OnPluginStart()
 	CreateConVar("dod_zones_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 
 	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay\n4 = Dont allow to shoot\n5 = Allow only melee weapon", FCVAR_PLUGIN, true, 1.0, true, 5.0);
+	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce player back\n3 = Slay\n4 = Dont allow to shoot\n5 = Allow only melee weapon", FCVAR_PLUGIN, true, 1.0, true, 5.0);
 	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not always show the zones on a map", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not show the zones on a map all the times", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
 	// For name/rename a zone
 	AddCommandListener(Command_Chat, "say");
@@ -179,18 +179,18 @@ public OnPluginStart()
 	// Finds a networkable send property offset for "CBasePlayer::m_hMyWeapons"
 	if ((m_hMyWeapons = FindSendPropOffs("CBasePlayer", "m_hMyWeapons")) == -1)
 	{
-		SetFailState("Fatal Error: Unable to find prop offset \"CBasePlayer::m_hMyWeapons\" !");
+		SetFailState("Fatal Error: Unable to find property offset \"CBasePlayer::m_hMyWeapons\" !");
 	}
 
 	// Also find appropriate networkable send property offsets for a weapons
 	if ((m_flNextPrimaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextPrimaryAttack")) == -1)
 	{
-		SetFailState("Fatal Error: Unable to find prop offset \"CBaseCombatWeapon::m_flNextPrimaryAttack\" !");
+		SetFailState("Fatal Error: Unable to find property offset \"CBaseCombatWeapon::m_flNextPrimaryAttack\" !");
 	}
 	if ((m_flNextSecondaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextSecondaryAttack")) == -1)
 	{
 		// Disable plugin if offset was not found
-		SetFailState("Fatal Error: Unable to find prop offset \"CBaseCombatWeapon::m_flNextSecondaryAttack\" !");
+		SetFailState("Fatal Error: Unable to find property offset \"CBaseCombatWeapon::m_flNextSecondaryAttack\" !");
 	}
 
 	// Create a global array
@@ -232,22 +232,20 @@ public OnAdminMenuReady(Handle:topmenu)
  * -------------------------------------------------------------------------- */
 public OnMapStart()
 {
-	// Get current map
+	// Get the current map
 	decl String:curmap[64];
 	GetCurrentMap(curmap, sizeof(curmap));
 
-	// Set global string same as current map one
+	// Set global map string same as current map
 	strcopy(map, sizeof(map), curmap);
 
-	// Effects
+	// Effects and model
 	LaserMaterial = PrecacheModel("materials/sprites/laser.vmt");
 	HaloMaterial  = PrecacheModel("materials/sprites/halo01.vmt");
-	GlowSprite    = PrecacheModel("sprites/blueglow2.vmt", true);
-
-	// Model
+	GlowSprite    = PrecacheModel("sprites/blueglow2.vmt");
 	PrecacheModel(ZONES_MODEL, true);
 
-	// Prepare config for new map
+	// Prepare a config for new map
 	ParseZoneConfig();
 
 	// Create global repeatable timer to show zones
@@ -534,7 +532,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							WeaponPunishment[activator] = false;
 						}
 					}
-					// default: custom punishment will be added later
+					//default: custom punishment will be added later
 				}
 			}
 		}
@@ -1270,7 +1268,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				{
 					CloseHandle(kv);
 					ShowZoneOptionsMenu(client);
-					PrintToChat(client, "%sConfig file is empty. Can't edit it permanently!", PREFIX);
+					PrintToChat(client, "%sMap config file is empty. Can't edit it permanently", PREFIX);
 					return;
 				}
 
@@ -1309,7 +1307,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 					 EditingVector[client] = FIRST_VECTOR;
 				else EditingVector[client] = SECOND_VECTOR;
 
-				if (IsNullVector(FirstZoneVector[client]) && IsNullVector(SecondZoneVector[client]))
+				if (IsVectorZero(FirstZoneVector[client]) && IsVectorZero(SecondZoneVector[client]))
 				{
 					// Define a color depends on team
 					switch (team)
@@ -2134,7 +2132,7 @@ SpawnZone(zoneIndex)
 
 	#define EF_NODRAW 0x020
 
-	// Make the zone visible by removing EF_NODRAW flag
+	// Make the zone visible by EF_NODRAW flag
 	new m_fEffects = GetEntProp(zone, Prop_Send, "m_fEffects");
 	m_fEffects |= EF_NODRAW;
 	SetEntProp(zone, Prop_Send, "m_fEffects", m_fEffects);
@@ -2200,28 +2198,20 @@ CloseHandleArray(Handle:adt_array)
 
 /* ClearVector()
  *
- * Resets vector values to 0.0
+ * Resets vector to 0.0
  * -------------------------------------------------------------------------- */
 ClearVector(Float:vec[3])
 {
 	vec[0] = vec[1] = vec[2] = 0.0;
 }
 
-/* IsNullVector()
+/* IsVectorZero()
  *
- * Checks whether or not given vector is reset (null).
+ * SourceMod Anti-Cheat stock.
  * -------------------------------------------------------------------------- */
-bool:IsNullVector(const Float:vec[3])
+bool:IsVectorZero(const Float:vec[3])
 {
-	if (vec[0] == 0.0
-	&&  vec[1] == 0.0
-	&&  vec[2] == 0.0)
-	{
-		// really vector is null
-		return true;
-	}
-
-	return false;
+	return vec[0] == 0.0 && vec[1] == 0.0 && vec[2] == 0.0;
 }
 
 /* GetMiddleOfABox()
@@ -2259,7 +2249,7 @@ GetMiddleOfABox(const Float:vec1[3], const Float:vec2[3], Float:buffer[3])
  * @param color			Color array (r, g, b, a).
  * @param Speed			Speed of the beam.
  * @noreturn
- */
+  * -------------------------------------------------------------------------- */
 TE_SendBeamBoxToClient(client, const Float:upc[3], const Float:btc[3], ModelIndex, HaloIndex, StartFrame, FrameRate, const Float:Life, const Float:Width, const Float:EndWidth, FadeLength, const Float:Amplitude, const Color[4], Speed)
 {
 	// Create the additional corners of the box
