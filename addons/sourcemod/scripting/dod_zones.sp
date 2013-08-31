@@ -4,7 +4,7 @@
 * Description:
 *   Defines map zones where players are not allowed to enter (with different punishments).
 *
-* Version 1.1
+* Version 1.2
 * Changelog & more info at http://goo.gl/4nKhJ
 */
 
@@ -19,7 +19,7 @@
 
 // ====[ CONSTANTS ]=========================================================
 #define PLUGIN_NAME       "DoD:S Zones"
-#define PLUGIN_VERSION    "1.1"
+#define PLUGIN_VERSION    "1.2"
 
 #define SLOT_MELEE        2
 #define DOD_MAXPLAYERS    33
@@ -147,10 +147,6 @@ public OnPluginStart()
 	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not show the zones on a map all the times", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
-	// For name/rename a zone
-	AddCommandListener(Command_Chat, "say");
-	AddCommandListener(Command_Chat, "say_team");
-
 	// Hotfix for weapon punishments
 	AddCommandListener(Command_Drop, "drop");
 
@@ -187,6 +183,7 @@ public OnPluginStart()
 	{
 		SetFailState("Fatal Error: Unable to find property offset \"CBaseCombatWeapon::m_flNextPrimaryAttack\" !");
 	}
+
 	if ((m_flNextSecondaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextSecondaryAttack")) == -1)
 	{
 		// Disable plugin if offset was not found
@@ -565,11 +562,14 @@ public Action:OnWeaponUsage(client, weapon)
  *
  * When the say/say_team commands are used.
  * -------------------------------------------------------------------------- */
-public Action:Command_Chat(client, const String:command[], args)
+public Action:OnClientSayCommand(client, const String:command[], const String:sArgs[])
 {
-	// Retrieve the argument of say commands (a text) and strip quotes
 	decl String:text[MAX_ZONE_LENGTH];
-	GetCmdArgString(text, sizeof(text));
+
+	// Copy original message
+	strcopy(text, sizeof(text), sArgs);
+
+	// Remove quotes from dest string
 	StripQuotes(text);
 
 	// When player is about to name a zone
