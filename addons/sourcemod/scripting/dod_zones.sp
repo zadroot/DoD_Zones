@@ -4,7 +4,7 @@
 * Description:
 *   Defines map zones where players are not allowed to enter (with different punishments).
 *
-* Version 1.2
+* Version 1.3
 * Changelog & more info at http://goo.gl/4nKhJ
 */
 
@@ -19,8 +19,9 @@
 
 // ====[ CONSTANTS ]=========================================================
 #define PLUGIN_NAME       "DoD:S Zones"
-#define PLUGIN_VERSION    "1.2"
+#define PLUGIN_VERSION    "1.3"
 
+#define INIT              -1
 #define SLOT_MELEE        2
 #define DOD_MAXPLAYERS    33
 #define DOD_MAXWEAPONS    47
@@ -33,7 +34,6 @@
 
 enum
 {
-	INIT = -1,
 	NO_POINT,
 	FIRST_POINT,
 	SECOND_POINT,
@@ -43,7 +43,6 @@ enum
 
 enum
 {
-	INIT = -1,
 	NO_VECTOR,
 	FIRST_VECTOR,
 	SECOND_VECTOR,
@@ -53,7 +52,6 @@ enum
 
 enum
 {
-	DEFAULT = -1,
 	CUSTOM,
 	ANNOUNCE,
 	BOUNCE,
@@ -105,9 +103,9 @@ new	EditingZone[DOD_MAXPLAYERS + 1]           = { INIT,  ... },
 new	m_hMyWeapons,
 	m_flNextPrimaryAttack,
 	m_flNextSecondaryAttack,
-	LaserMaterial = INIT,
-	HaloMaterial  = INIT,
-	GlowSprite    = INIT,
+	LaserMaterial,
+	HaloMaterial,
+	GlowSprite,
 	String:map[64],
 	TeamZones[TEAM_SIZE];
 
@@ -156,7 +154,8 @@ public OnPluginStart()
 	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone (by name)");
 
 	// Hook events
-	HookEvent("player_death",    OnPlayerDeath);
+	HookEvent("player_spawn",    OnPlayerEvents);
+	HookEvent("player_death",    OnPlayerEvents);
 	HookEvent("dod_round_start", OnRoundStart, EventHookMode_PostNoCopy);
 
 	// Translations
@@ -173,24 +172,24 @@ public OnPluginStart()
 	}
 
 	// Finds a networkable send property offset for "CBasePlayer::m_hMyWeapons"
-	if ((m_hMyWeapons = FindSendPropOffs("CBasePlayer", "m_hMyWeapons")) == -1)
+	if ((m_hMyWeapons = FindSendPropOffs("CBasePlayer", "m_hMyWeapons")) == INIT)
 	{
 		SetFailState("Fatal Error: Unable to find property offset \"CBasePlayer::m_hMyWeapons\" !");
 	}
 
 	// Also find appropriate networkable send property offsets for a weapons
-	if ((m_flNextPrimaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextPrimaryAttack")) == -1)
+	if ((m_flNextPrimaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextPrimaryAttack")) == INIT)
 	{
 		SetFailState("Fatal Error: Unable to find property offset \"CBaseCombatWeapon::m_flNextPrimaryAttack\" !");
 	}
 
-	if ((m_flNextSecondaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextSecondaryAttack")) == -1)
+	if ((m_flNextSecondaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextSecondaryAttack")) == INIT)
 	{
 		// Disable plugin if offset was not found
 		SetFailState("Fatal Error: Unable to find property offset \"CBaseCombatWeapon::m_flNextSecondaryAttack\" !");
 	}
 
-	// Create a global array
+	// Create a zones array
 	ZonesArray = CreateArray();
 
 	// And create/load plugin's config
@@ -336,7 +335,7 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 	{
 		decl String:class[MAX_ZONE_LENGTH], zone, z;
 		zone = INIT; // Faster and better than for (new i = MaxClients; i < GetMaxEntities(); i++)
-		while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
+		while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 		{
 			// Kill all previous zones
 			if (IsValidEntity(zone)
@@ -352,14 +351,19 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 		{
 			SpawnZone(z);
 		}
+
+		for (z = 1; z <= MaxClients; z++) // Reset weapon punishments for all clients when round starts
+		{
+			WeaponPunishment[z] = false;
+		}
 	}
 }
 
-/* OnPlayerDeath()
+/* OnPlayerEvents()
  *
- * Called when the player dies.
+ * Called when the player respawns or dies.
  * -------------------------------------------------------------------------- */
-public OnPlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)
+public OnPlayerEvents(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	// Allow player to use any weapon again
 	WeaponPunishment[GetClientOfUserId(GetEventInt(event, "userid"))] = false;
@@ -374,7 +378,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 	if (GetConVarBool(zones_enabled))
 	{
 		// Deal with valid 'activators'
-		if (activator && activator <= MaxClients)
+		if (1 <= activator <= MaxClients)
 		{
 			if (IsClientInGame(activator) && IsPlayerAlive(activator))
 			{
@@ -386,7 +390,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				}
 
 				// Get the name of a zone
-				decl String:targetname[MAX_ZONE_LENGTH+10], String:ZoneName[MAX_ZONE_LENGTH];
+				decl String:targetname[MAX_ZONE_LENGTH+10], String:ZoneName[MAX_ZONE_LENGTH], i;
 				GetEntPropString(caller, Prop_Data, "m_iName", targetname, sizeof(targetname));
 
 				// init punishments
@@ -397,7 +401,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				new bool:StartTouch = StrEqual(output, "OnStartTouch", false);
 
 				// Loop through all available zones
-				for (new i = 0; i < GetArraySize(ZonesArray); i++)
+				for (i = 0; i < GetArraySize(ZonesArray); i++)
 				{
 					new Handle:hZone = GetArrayCell(ZonesArray, i);
 					GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
@@ -417,10 +421,8 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				}
 
 				// If any punishment is used, set a real punishment value
-				if (punishment > DEFAULT)
-				{
+				if (punishment > INIT)
 					real_punishment = punishment;
-				}
 
 				switch (real_punishment)
 				{
@@ -446,7 +448,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							else if (vel[1] < 0.0 && vel[1] > -200.0)
 								vel[1] = -200.0;
 							if (vel[2] > 0.0) // Never push the activator up!
-								vel[2] *= -1.0;
+								vel[2] *= -0.1;
 
 							// Move player
 							TeleportEntity(activator, NULL_VECTOR, NULL_VECTOR, vel);
@@ -478,12 +480,13 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							WeaponPunishment[activator] = false;
 						}
 
+						new Float:time = GetGameTime();
+
 						// 47 offsets are available in m_hMyWeapons table
-						for (new i = 0; i <= DOD_MAXWEAPONS; i++)
+						for (i = 0; i <= DOD_MAXWEAPONS; i++)
 						{
 							// Retrieve the all weapons of a player
 							new weapons = GetEntDataEnt2(activator, m_hMyWeapons + (i * 4));
-							new Float:time = GetGameTime();
 
 							// Weapon is okay?
 							if (weapons != -1)
@@ -514,7 +517,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 								decl String:class[MAX_NAME_LENGTH];
 								GetEdictClassname(weapon, class, sizeof(class));
 								FakeClientCommand(activator, "use %s", class);
-								//SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
 							}
 
 							PrintToChat(activator, "%s%t", PREFIX, "Can use melee only");
@@ -529,7 +532,6 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							WeaponPunishment[activator] = false;
 						}
 					}
-					//default: custom punishment will be added later
 				}
 			}
 		}
@@ -871,8 +873,8 @@ ShowActiveZonesMenu(client)
 	// Set menu title
 	SetMenuTitle(menu, "%T:", "Active Zones", client);
 
-	decl String:name[PLATFORM_MAX_PATH], String:strnum[8];
-	for (new i = 0; i < GetArraySize(ZonesArray); i++)
+	decl String:name[PLATFORM_MAX_PATH], String:strnum[8], i;
+	for (i = 0; i < GetArraySize(ZonesArray); i++)
 	{
 		// Loop through all zones in array
 		new Handle:hZone = GetArrayCell(ZonesArray, i);
@@ -936,7 +938,7 @@ ShowActivatedZonesMenu(client)
 	decl String:class[MAX_ZONE_LENGTH], zone;
 
 	zone = INIT;
-	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
+	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		if (IsValidEntity(zone) && !GetEntProp(zone, Prop_Data, "m_bDisabled") // Dont add diactivated zones
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
@@ -995,7 +997,7 @@ ShowDiactivatedZonesMenu(client)
 	zone = INIT;
 
 	// Search for any zones on a map
-	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
+	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		// If we found a zone, make sure its not diactivated
 		if (IsValidEntity(zone) && GetEntProp(zone, Prop_Data, "m_bDisabled")
@@ -1095,13 +1097,12 @@ ShowZoneOptionsMenu(client)
 		switch (GetArrayCell(hZone, ZONE_PUNISHMENT))
 		{
 			// No individual zones_punishment selected. Using default one (which is defined in ConVar)
-			case DEFAULT:  Format(buffer, sizeof(buffer), "%T", "Default",       client);
+			case INIT:     Format(buffer, sizeof(buffer), "%T", "Default",       client);
 			case ANNOUNCE: Format(buffer, sizeof(buffer), "%T", "Print Message", client);
 			case BOUNCE:   Format(buffer, sizeof(buffer), "%T", "Bounce Back",   client);
 			case SLAY:     Format(buffer, sizeof(buffer), "%T", "Slay player",   client);
 			case NOSHOOT:  Format(buffer, sizeof(buffer), "%T", "No shooting",   client);
 			case MELEE:    Format(buffer, sizeof(buffer), "%T", "Only Melee",    client);
-			//default:       Format(buffer, sizeof(buffer), "%T", "Custom Punishment", client);
 		}
 
 		// Update punishment info
@@ -1402,8 +1403,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 ShowZoneVectorEditMenu(client)
 {
 	// Make sure player is not editing any other zone at this moment
-	if (EditingZone[client]   != INIT
-	||  EditingVector[client] != INIT)
+	if (EditingZone[client] != INIT || EditingVector[client] != INIT)
 	{
 		// Initialize translation string
 		decl String:ZoneName[MAX_ZONE_LENGTH], String:translation[128];
@@ -1884,8 +1884,8 @@ public Action:Timer_ShowZones(Handle:timer)
 		for (new i = 0; i < GetArraySize(ZonesArray); i++)
 		{
 			// Initialize positions, color, team index and other stuff
-			decl Float:pos1[3], Float:pos2[3], color[4], Handle:hZone, team, client;
-			hZone = GetArrayCell(ZonesArray, i);
+			decl Float:pos1[3], Float:pos2[3], color[4], team, client;
+			new Handle:hZone = GetArrayCell(ZonesArray, i);
 
 			// Retrieve positions from array
 			GetArrayArray(hZone, FIRST_VECTOR,  pos1, VECTORS_SIZE);
@@ -1951,14 +1951,14 @@ ParseZoneConfig()
 		}
 
 		// Initialize everything, also get the section names
-		decl String:buffer[MAX_ZONE_LENGTH], Float:vector[3], Handle:TempArray, zoneIndex, real_punishment;
+		decl String:buffer[MAX_ZONE_LENGTH], Float:vector[3], zoneIndex, real_punishment;
 		KvGetSectionName(kv, buffer, sizeof(buffer));
 
 		// Go through config for this map
 		do
 		{
 			// Create temporary array
-			TempArray = CreateArray(ByteCountToCells(PLATFORM_MAX_PATH));
+			new Handle:TempArray = CreateArray(ByteCountToCells(PLATFORM_MAX_PATH));
 
 			// Retrieve zone name, and push name into temp array
 			KvGetString(kv, "zone_ident", buffer, sizeof(buffer));
@@ -1990,7 +1990,7 @@ ParseZoneConfig()
 			}
 
 			// Get the punishments
-			real_punishment = KvGetNum(kv, "punishment", DEFAULT);
+			real_punishment = KvGetNum(kv, "punishment", INIT);
 
 			// Add punishments into temporary array
 			PushArrayCell(TempArray, real_punishment);
@@ -2023,7 +2023,7 @@ ActivateZone(const String:text[])
 	zone = INIT;
 
 	// Make sure at least one zone entity is exists
-	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
+	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		if (IsValidEntity(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
@@ -2045,7 +2045,7 @@ DiactivateZone(const String:text[])
 	decl String:class[MAX_ZONE_LENGTH+10], zone;
 
 	zone = INIT;
-	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
+	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		// Same checks as usual
 		if (IsValidEntity(zone)
@@ -2130,11 +2130,11 @@ SpawnZone(zoneIndex)
 	// Make it non-solid
 	SetEntProp(zone, Prop_Send, "m_nSolidType", 2);
 
-	#define EF_NODRAW 0x020
+	//#define EF_NODRAW 0x020
 
 	// Make the zone visible by EF_NODRAW flag
 	new m_fEffects = GetEntProp(zone, Prop_Send, "m_fEffects");
-	m_fEffects |= EF_NODRAW;
+	m_fEffects |= 0x020;
 	SetEntProp(zone, Prop_Send, "m_fEffects", m_fEffects);
 
 	// Hook touch entity outputs
@@ -2155,7 +2155,7 @@ KillZone(zoneIndex)
 	GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
 	zone = INIT;
-	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != -1)
+	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		if (IsValidEntity(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class)) // Get m_iName datamap
@@ -2253,23 +2253,23 @@ GetMiddleOfABox(const Float:vec1[3], const Float:vec2[3], Float:buffer[3])
 TE_SendBeamBoxToClient(client, const Float:upc[3], const Float:btc[3], ModelIndex, HaloIndex, StartFrame, FrameRate, const Float:Life, const Float:Width, const Float:EndWidth, FadeLength, const Float:Amplitude, const Color[4], Speed)
 {
 	// Create the additional corners of the box
-	new Float:tc1[3];
+	decl Float:tc1[] = {0.0, 0.0, 0.0};
+	decl Float:tc2[] = {0.0, 0.0, 0.0};
+	decl Float:tc3[] = {0.0, 0.0, 0.0};
+	decl Float:tc4[] = {0.0, 0.0, 0.0};
+	decl Float:tc5[] = {0.0, 0.0, 0.0};
+	decl Float:tc6[] = {0.0, 0.0, 0.0};
 	AddVectors(tc1, upc, tc1);
-	tc1[0] = btc[0];
-	new Float:tc2[3];
 	AddVectors(tc2, upc, tc2);
-	tc2[1] = btc[1];
-	new Float:tc3[3];
 	AddVectors(tc3, upc, tc3);
-	tc3[2] = btc[2];
-	new Float:tc4[3];
 	AddVectors(tc4, btc, tc4);
-	tc4[0] = upc[0];
-	new Float:tc5[3];
 	AddVectors(tc5, btc, tc5);
-	tc5[1] = upc[1];
-	new Float:tc6[3];
 	AddVectors(tc6, btc, tc6);
+	tc1[0] = btc[0];
+	tc2[1] = btc[1];
+	tc3[2] = btc[2];
+	tc4[0] = upc[0];
+	tc5[1] = upc[1];
 	tc6[2] = upc[2];
 
 	// Draw all the edges
