@@ -13,20 +13,18 @@
 // ====[ INCLUDES ]==========================================================
 #include <sdktools>
 #include <sdkhooks>
-
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
 
 // ====[ CONSTANTS ]=========================================================
 #define PLUGIN_NAME       "DoD:S Zones"
-#define PLUGIN_VERSION    "1.3"
+#define PLUGIN_VERSION    "1.4"
 
 #define INIT              -1
 #define SLOT_MELEE        2
 #define DOD_MAXPLAYERS    33
 #define DOD_MAXWEAPONS    47
 #define MAX_ZONE_LENGTH   64
-
 #define LIFETIME_INTERVAL 5.0
 
 #define ZONES_MODEL       "models/error.mdl"
@@ -137,7 +135,7 @@ public Plugin:myinfo =
  * -------------------------------------------------------------------------- */
 public OnPluginStart()
 {
-	// Create ConVars
+	// Create plugin ConVars
 	CreateConVar("dod_zones_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 
 	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
@@ -148,26 +146,25 @@ public OnPluginStart()
 	// Hotfix for weapon punishments
 	AddCommandListener(Command_Drop, "drop");
 
-	// Register admin commands, which is requires config flag
+	// Register admin commands which is requires config flag
 	RegAdminCmd("sm_zones",     Command_SetupZones,     ADMFLAG_CONFIG, "Opens the zones main menu");
 	RegAdminCmd("sm_actzone",   Command_ActivateZone,   ADMFLAG_CONFIG, "Activates a zone (by name)");
 	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone (by name)");
 
-	// Hook events
+	// Hook pluin events
 	HookEvent("player_spawn",    OnPlayerEvents);
 	HookEvent("player_death",    OnPlayerEvents);
 	HookEvent("dod_round_start", OnRoundStart, EventHookMode_PostNoCopy);
 
-	// Translations
+	// Load stock and zones translations eventually
 	LoadTranslations("common.phrases");
 	LoadTranslations("playercommands.phrases");
 	LoadTranslations("dod_zones.phrases");
 
-	// Adminmenu integration
+	// Adminmenu integration when menu is ready
 	new Handle:topmenu = INVALID_HANDLE;
 	if (LibraryExists("adminmenu") && ((topmenu = GetAdminTopMenu()) != INVALID_HANDLE))
 	{
-		// Hook when ready
 		OnAdminMenuReady(topmenu);
 	}
 
@@ -280,7 +277,7 @@ public OnClientDisconnect(client)
  *
  * When a clients movement buttons are being processed.
  * -------------------------------------------------------------------------- */
-public Action:OnPlayerRunCmd(client, &buttons, &impulse, Float:vel[3], Float:angles[3], &weapon)
+public Action:OnPlayerRunCmd(client, &buttons)
 {
 	// Make sure player is pressing +USE button
 	if (buttons & IN_USE)
@@ -394,6 +391,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				GetEntPropString(caller, Prop_Data, "m_iName", targetname, sizeof(targetname));
 
 				// init punishments
+				new team = TEAM_ALL;
 				new punishment = INIT;
 				new real_punishment = GetConVarInt(zones_punishment);
 
@@ -410,7 +408,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 					if (StrEqual(ZoneName, targetname[9], false))
 					{
 						// Then retrieve team and punishment
-						new team   = GetArrayCell(hZone, ZONE_TEAM);
+						team       = GetArrayCell(hZone, ZONE_TEAM);
 						punishment = GetArrayCell(hZone, ZONE_PUNISHMENT);
 						if (team != TEAM_ALL && GetClientTeam(activator) != team)
 						{
@@ -436,11 +434,10 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							decl Float:vel[3];
 
 							vel[0] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[0]");
-							vel[1] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[1]");
-							vel[2] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[2]");
-
 							vel[0] *= -2.0;
+							vel[1] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[1]");
 							vel[1] *= -2.0;
+							vel[2] = GetEntPropFloat(activator, Prop_Send, "m_vecVelocity[2]");
 
 							// Always bounce back with at least 200 velocity
 							if (vel[1] > 0.0 && vel[1] < 200.0)
@@ -453,9 +450,15 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							// Move player
 							TeleportEntity(activator, NULL_VECTOR, NULL_VECTOR, vel);
 
+							// Set collision group to COLLISION_GROUP_PUSHAWAY if team is ANY or matches
+							SetEntProp(caller, Prop_Send, "m_CollisionGroup", team == TEAM_ALL || team == GetClientTeam(activator) ? 17 : 0);
+
 							// Notify player about not allowing to enter there by default phrase from resources
 							PrintHintText(activator, "#Dod_wrong_way");
 						}
+
+						// Otherwise make wall non-solid
+						else SetEntProp(caller, Prop_Send, "m_CollisionGroup", 0);
 					}
 					case SLAY:
 					{
@@ -2079,7 +2082,6 @@ SpawnZone(zoneIndex)
 	// Set name
 	Format(ZoneName, sizeof(ZoneName), "dod_zone %s", ZoneName);
 	DispatchKeyValue(zone, "targetname", ZoneName);
-
 	DispatchKeyValue(zone, "spawnflags", "64");
 	DispatchKeyValue(zone, "wait",       "0");
 
@@ -2128,9 +2130,7 @@ SpawnZone(zoneIndex)
 	SetEntPropVector(zone, Prop_Send, "m_vecMaxs", m_vecMaxs);
 
 	// Make it non-solid
-	SetEntProp(zone, Prop_Send, "m_nSolidType", 2);
-
-	//#define EF_NODRAW 0x020
+	SetEntProp(zone, Prop_Send, "m_usSolidFlags", 152);
 
 	// Make the zone visible by EF_NODRAW flag
 	new m_fEffects = GetEntProp(zone, Prop_Send, "m_fEffects");
