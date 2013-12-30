@@ -451,14 +451,13 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							TeleportEntity(activator, NULL_VECTOR, NULL_VECTOR, vel);
 
 							// Set collision group to COLLISION_GROUP_PUSHAWAY if team is ANY or matches
-							SetEntProp(caller, Prop_Send, "m_CollisionGroup", team == TEAM_ALL || team == GetClientTeam(activator) ? 17 : 0);
+							SetEntProp(caller, Prop_Send, "m_CollisionGroup", team == TEAM_ALL || team == GetClientTeam(activator) ? 17 : 11);
 
 							// Notify player about not allowing to enter there by default phrase from resources
 							PrintHintText(activator, "#Dod_wrong_way");
 						}
-
 						// Otherwise make wall non-solid
-						else SetEntProp(caller, Prop_Send, "m_CollisionGroup", 0);
+						else SetEntProp(caller, Prop_Send, "m_CollisionGroup", 11);
 					}
 					case SLAY:
 					{
@@ -2129,8 +2128,9 @@ SpawnZone(zoneIndex)
 	SetEntPropVector(zone, Prop_Send, "m_vecMins", m_vecMins);
 	SetEntPropVector(zone, Prop_Send, "m_vecMaxs", m_vecMaxs);
 
-	// Make it non-solid
-	SetEntProp(zone, Prop_Send, "m_usSolidFlags", 152);
+	// Enable touch functions and set it as non-solid for everything
+	SetEntProp(zone, Prop_Send, "m_usSolidFlags",  152);
+	SetEntProp(zone, Prop_Send, "m_CollisionGroup", 11);
 
 	// Make the zone visible by EF_NODRAW flag
 	new m_fEffects = GetEntProp(zone, Prop_Send, "m_fEffects");
