@@ -1,34 +1,31 @@
 /**
-* DoD:S Zones by Root
+* SM Zones by Root
 *
 * Description:
 *   Defines map zones where players are not allowed to enter (with different punishments).
 *
-* Version 1.3
+* Version 1.0
 * Changelog & more info at http://goo.gl/4nKhJ
 */
 
-#pragma semicolon 1
-
 // ====[ INCLUDES ]==========================================================
-#include <sdktools>
 #include <sdkhooks>
+#undef REQUIRE_EXTENSIONS
+#include <cstrike>
+#include <tf2_stocks>
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
 
 // ====[ CONSTANTS ]=========================================================
-#define PLUGIN_NAME       "DoD:S Zones"
-#define PLUGIN_VERSION    "1.4"
+#define PLUGIN_NAME       "SM Zones"
+#define PLUGIN_VERSION    "1.0"
 
+#define ZONES_MODEL       "models/error.mdl" // This model exists in any source game
 #define INIT              -1
 #define SLOT_MELEE        2
-#define DOD_MAXPLAYERS    33
-#define DOD_MAXWEAPONS    47
+#define TEAM_SIZE         4
 #define MAX_ZONE_LENGTH   64
 #define LIFETIME_INTERVAL 5.0
-
-#define ZONES_MODEL       "models/error.mdl"
-#define PREFIX            "\x01[\x04DoD:S Zones\x01] >> \x07FFFF00"
 
 enum
 {
@@ -50,12 +47,13 @@ enum
 
 enum
 {
-	CUSTOM,
 	ANNOUNCE,
 	BOUNCE,
 	SLAY,
 	NOSHOOT,
-	MELEE
+	MELEE,
+
+	PUNISHMENTS_SIZE
 }
 
 enum
@@ -69,43 +67,37 @@ enum
 	ZONEARRAY_SIZE
 }
 
-enum
-{
-	TEAM_ALL,
-	TEAM_SPECTATOR,
-	TEAM_ALLIES,
-	TEAM_AXIS,
-
-	TEAM_SIZE
-}
-
 // ====[ VARIABLES ]=========================================================
 new	Handle:AdminMenuHandle  = INVALID_HANDLE,
 	Handle:ZonesArray       = INVALID_HANDLE,
 	Handle:zones_enabled    = INVALID_HANDLE,
 	Handle:zones_punishment = INVALID_HANDLE,
 	Handle:admin_immunity   = INVALID_HANDLE,
+	Handle:show_messages    = INVALID_HANDLE,
 	Handle:show_zones       = INVALID_HANDLE;
 
 // ====[ GLOBALS ]===========================================================
-new	EditingZone[DOD_MAXPLAYERS + 1]           = { INIT,  ... },
-	EditingVector[DOD_MAXPLAYERS + 1]         = { INIT,  ... },
-	ZonePoint[DOD_MAXPLAYERS + 1]             = { false, ... },
-	bool:PressedUse[DOD_MAXPLAYERS + 1]       = { false, ... },
-	bool:NamesZone[DOD_MAXPLAYERS + 1]        = { false, ... },
-	bool:RenamesZone[DOD_MAXPLAYERS + 1]      = { false, ... },
-	bool:WeaponPunishment[DOD_MAXPLAYERS + 1] = { false, ... },
-	Float:FirstZoneVector[DOD_MAXPLAYERS + 1][3],
-	Float:SecondZoneVector[DOD_MAXPLAYERS + 1][3];
+new	EditingZone[MAXPLAYERS + 1]           = { INIT,     ... },
+	EditingVector[MAXPLAYERS + 1]         = { INIT,     ... },
+	ZonePoint[MAXPLAYERS + 1]             = { NO_POINT, ... },
+	bool:NamesZone[MAXPLAYERS + 1]        = { false,    ... },
+	bool:RenamesZone[MAXPLAYERS + 1]      = { false,    ... },
+	bool:WeaponPunishment[MAXPLAYERS + 1] = { false,    ... },
+	Float:FirstZoneVector[MAXPLAYERS + 1][3],
+	Float:SecondZoneVector[MAXPLAYERS + 1][3];
 
-new	m_hMyWeapons,
+new	bool:bLate,
+	m_hMyWeapons,
 	m_flNextPrimaryAttack,
 	m_flNextSecondaryAttack,
+	MAX_WEAPONS,
 	LaserMaterial,
 	HaloMaterial,
 	GlowSprite,
 	String:map[64],
-	TeamZones[TEAM_SIZE];
+	String:PREFIX[32],
+	TeamZones[TEAM_SIZE],
+	TeamColors[TEAM_SIZE][4];
 
 // ====[ PLUGIN ]============================================================
 public Plugin:myinfo =
@@ -117,6 +109,20 @@ public Plugin:myinfo =
 	url         = "http://www.dodsplugins.com/, http://www.wcfan.de/"
 }
 
+
+/* APLRes:AskPluginLoad2()
+ *
+ * Called before the plugin starts up.
+ * ----------------------------------------------------------------- */
+public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
+{
+	// late-load
+	bLate = late;
+
+	// Mark GetEngineVersion as optional native due to older SM versions and GetEngineVersionCompat() stock
+	MarkNativeAsOptional("GetEngineVersion");
+	return APLRes_Success;
+}
 
 /**
  * --------------------------------------------------------------------------
@@ -138,28 +144,80 @@ public OnPluginStart()
 	// Create plugin ConVars
 	CreateConVar("dod_zones_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 
-	zones_enabled    = CreateConVar("dod_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	zones_punishment = CreateConVar("dod_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay player\n4 = Dont allow to shoot\n5 = Allow only melee weapon", FCVAR_PLUGIN, true, 1.0, true, 5.0);
-	admin_immunity   = CreateConVar("dod_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	show_zones       = CreateConVar("dod_zones_show",           "0", "Whether or not show the zones on a map all the times", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-
-	// Hotfix for weapon punishments
-	AddCommandListener(Command_Drop, "drop");
+	zones_enabled    = CreateConVar("sm_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	zones_punishment = CreateConVar("sm_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay player\n4 = Dont allow to shoot\n5 = Allow only melee weapon", FCVAR_PLUGIN, true, 1.0, true, 5.0);
+	admin_immunity   = CreateConVar("sm_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	show_messages    = CreateConVar("sm_zones_show_messages",  "1", "Whether or not show messages in chat to player that entered protected zone", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	show_zones       = CreateConVar("sm_zones_show",           "0", "Whether or not show the zones on a map all the times", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 
 	// Register admin commands which is requires config flag
 	RegAdminCmd("sm_zones",     Command_SetupZones,     ADMFLAG_CONFIG, "Opens the zones main menu");
 	RegAdminCmd("sm_actzone",   Command_ActivateZone,   ADMFLAG_CONFIG, "Activates a zone (by name)");
 	RegAdminCmd("sm_diactzone", Command_DiactivateZone, ADMFLAG_CONFIG, "Diactivates a zone (by name)");
 
-	// Hook pluin events
-	HookEvent("player_spawn",    OnPlayerEvents);
-	HookEvent("player_death",    OnPlayerEvents);
-	HookEvent("dod_round_start", OnRoundStart, EventHookMode_PostNoCopy);
+	// Prevent weapon dropping for weapon punishments
+	AddCommandListener(Command_Drop, "drop");
+
+	// Hook plugin events
+	HookEvent("player_spawn",  OnPlayerEvents);
+	HookEvent("player_death",  OnPlayerEvents);
+	HookEventEx("round_start", OnRoundStart, EventHookMode_PostNoCopy); // Doesnt exists in TF2
+
+	// Find datamap offsets that required for this plugin
+	m_hMyWeapons            = GetSendPropOffset("CBasePlayer",       "m_hMyWeapons");
+	m_flNextPrimaryAttack   = GetSendPropOffset("CBaseCombatWeapon", "m_flNextPrimaryAttack");
+	m_flNextSecondaryAttack = GetSendPropOffset("CBaseCombatWeapon", "m_flNextSecondaryAttack");
+
+	// Default MAX_WEAPONS value for most games
+	MAX_WEAPONS = 48;
+
+	// Set default colors of zones per team
+	TeamColors[CS_TEAM_NONE] = { 255, 255, 255, 255 }; // White (punishment for both teams)
+	TeamColors[CS_TEAM_T]    = { 255, 0,   0,   255 }; // Red
+	TeamColors[CS_TEAM_CT]   = { 0,   0, 255,   255 }; // Blue
+
+	new EngineVersion:version = GetEngineVersionCompat();
+	switch (version)
+	{
+		case Engine_CSS:
+		{
+			PREFIX = "\x01[\x04CS:S Zones\x01] >> \x07FFFF00";
+		}
+		case Engine_DODS:
+		{
+			PREFIX = "\x01[\x04DoD:S Zones\x01] >> \x07FFFF00";
+
+			// Colors of an Allies team in DoD:S is green
+			TeamColors[CS_TEAM_CT] = { 0, 255, 0, 255 };
+
+			// round_start event exists in DoD:S, but fired only once after mapchange
+			HookEvent("dod_round_start", OnRoundStart, EventHookMode_PostNoCopy);
+		}
+		case Engine_TF2:
+		{
+			PREFIX = "\x01[\x04TF2 Zones\x01] >> \x07FFFF00";
+
+			// In TF2 hook voicemenu command to check whether or not 'medic' command was used
+			AddCommandListener(Command_VoiceMenu, "voicemenu");
+
+			// Also hook tf2-specific round start event
+			HookEvent("teamplay_round_start", OnRoundStart, EventHookMode_PostNoCopy);
+		}
+		case Engine_CSGO:
+		{
+			MAX_WEAPONS = 64; // CS:GO got 64 weapons max
+			PREFIX = "\x01[\x04CS:GO Zones\x01] >> \x03";
+		}
+		default:
+		{
+			PREFIX = "\x01[\x04Zones\x01] >> \x03";
+		}
+	}
 
 	// Load stock and zones translations eventually
 	LoadTranslations("common.phrases");
 	LoadTranslations("playercommands.phrases");
-	LoadTranslations("dod_zones.phrases");
+	LoadTranslations("sm_zones.phrases");
 
 	// Adminmenu integration when menu is ready
 	new Handle:topmenu = INVALID_HANDLE;
@@ -168,29 +226,11 @@ public OnPluginStart()
 		OnAdminMenuReady(topmenu);
 	}
 
-	// Finds a networkable send property offset for "CBasePlayer::m_hMyWeapons"
-	if ((m_hMyWeapons = FindSendPropOffs("CBasePlayer", "m_hMyWeapons")) == INIT)
-	{
-		SetFailState("Fatal Error: Unable to find property offset \"CBasePlayer::m_hMyWeapons\" !");
-	}
-
-	// Also find appropriate networkable send property offsets for a weapons
-	if ((m_flNextPrimaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextPrimaryAttack")) == INIT)
-	{
-		SetFailState("Fatal Error: Unable to find property offset \"CBaseCombatWeapon::m_flNextPrimaryAttack\" !");
-	}
-
-	if ((m_flNextSecondaryAttack = FindSendPropOffs("CBaseCombatWeapon", "m_flNextSecondaryAttack")) == INIT)
-	{
-		// Disable plugin if offset was not found
-		SetFailState("Fatal Error: Unable to find property offset \"CBaseCombatWeapon::m_flNextSecondaryAttack\" !");
-	}
-
 	// Create a zones array
 	ZonesArray = CreateArray();
 
 	// And create/load plugin's config
-	AutoExecConfig(true, "dod_zones");
+	AutoExecConfig(true, "sm_zones");
 }
 
 /* OnAdminMenuReady()
@@ -216,7 +256,7 @@ public OnAdminMenuReady(Handle:topmenu)
 	}
 
 	// Add 'Setup Zones' category to "ServerCommands" menu
-	AddToTopMenu(AdminMenuHandle, "dod_zones", TopMenuObject_Item, AdminMenu_Zones, server_commands, "dod_zones_immunity", ADMFLAG_CONFIG);
+	AddToTopMenu(AdminMenuHandle, "sm_zones", TopMenuObject_Item, AdminMenu_Zones, server_commands, "sm_zones_immunity", ADMFLAG_CONFIG);
 }
 
 /* OnMapStart()
@@ -229,13 +269,38 @@ public OnMapStart()
 	decl String:curmap[64];
 	GetCurrentMap(curmap, sizeof(curmap));
 
-	// Set global map string same as current map
-	strcopy(map, sizeof(map), curmap);
+	// Does current map string is contains a "workshop" word ?
+	if (StrContains(curmap, "workshop", false) != -1)
+	{
+		// If yes - skip the first 19 characters to avoid comparing the "workshop/12345678" prefix
+		strcopy(map, sizeof(map), curmap[19]);
+	}
+	else /* That's not a workshop map */
+	{
+		strcopy(map, sizeof(map), curmap);
+	}
 
-	// Effects and model
-	LaserMaterial = PrecacheModel("materials/sprites/laser.vmt");
-	HaloMaterial  = PrecacheModel("materials/sprites/halo01.vmt");
-	GlowSprite    = PrecacheModel("sprites/blueglow2.vmt");
+	// Setup tempent effects for zones
+	new EngineVersion:version = GetEngineVersionCompat();
+	switch (version)
+	{
+		case Engine_Left4Dead, Engine_Left4Dead2, Engine_AlienSwarm, Engine_CSGO:
+		{
+			// Those are different for different engines
+			LaserMaterial = PrecacheModel("materials/sprites/laserbeam.vmt");
+			HaloMaterial  = PrecacheModel("materials/sprites/glow01.vmt");
+			GlowSprite    = PrecacheModel("materials/sprites/blueflare1.vmt");
+		}
+		default:
+		{
+			// Generic effects are used in OB engine and earlier (?)
+			LaserMaterial = PrecacheModel("materials/sprites/laser.vmt");
+			HaloMaterial  = PrecacheModel("materials/sprites/halo01.vmt");
+			GlowSprite    = PrecacheModel("sprites/blueglow2.vmt");
+		}
+	}
+
+	// Precache zones model
 	PrecacheModel(ZONES_MODEL, true);
 
 	// Prepare a config for new map
@@ -243,6 +308,21 @@ public OnMapStart()
 
 	// Create global repeatable timer to show zones
 	CreateTimer(LIFETIME_INTERVAL, Timer_ShowZones, _, TIMER_FLAG_NO_MAPCHANGE|TIMER_REPEAT);
+
+	// Support for late loading
+	if (bLate)
+	{
+		// Loop through all clients on a server
+		for (new client = 1; client <= MaxClients; client++)
+		{
+			// Make sure those are in game
+			if (IsClientInGame(client))
+			{
+				// Enable hooks
+				OnClientPutInServer(client);
+			}
+		}
+	}
 }
 
 /* OnClientPutInServer()
@@ -255,19 +335,10 @@ public OnClientPutInServer(client)
 	SDKHook(client, SDKHook_WeaponSwitch, OnWeaponUsage);
 	SDKHook(client, SDKHook_WeaponCanUse, OnWeaponUsage);
 	SDKHook(client, SDKHook_WeaponEquip,  OnWeaponUsage);
-}
 
-/* OnClientDisconnect()
- *
- * When a client disconnects from the server.
- * -------------------------------------------------------------------------- */
-public OnClientDisconnect(client)
-{
 	// Reset everything
-	ZonePoint[client]   = NO_POINT;
 	EditingZone[client] = EditingVector[client] = INIT;
-
-	PressedUse[client]  =
+	ZonePoint[client]   =
 	NamesZone[client]   =
 	RenamesZone[client] =
 	WeaponPunishment[client] = false;
@@ -279,6 +350,9 @@ public OnClientDisconnect(client)
  * -------------------------------------------------------------------------- */
 public Action:OnPlayerRunCmd(client, &buttons)
 {
+	// Use this intead of global boolean
+	static bool:PressedUse[MAXPLAYERS + 1] = false;
+
 	// Make sure player is pressing +USE button
 	if (buttons & IN_USE)
 	{
@@ -316,8 +390,6 @@ public Action:OnPlayerRunCmd(client, &buttons)
 		// Cooldown
 		PressedUse[client] = true;
 	}
-
-	// Otherwise player is not pressing USE button
 	else PressedUse[client] = false;
 }
 
@@ -330,28 +402,28 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 	// Does plugin is enabled?
 	if (GetConVarBool(zones_enabled))
 	{
-		decl String:class[MAX_ZONE_LENGTH], zone, z;
-		zone = INIT; // Faster and better than for (new i = MaxClients; i < GetMaxEntities(); i++)
+		new zone = INIT; // Faster and better than for (new i = MaxClients; i < GetMaxEntities(); i++)
 		while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 		{
 			// Kill all previous zones
+			decl String:class[MAX_ZONE_LENGTH];
 			if (IsValidEntity(zone)
 			&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-			&& StrContains(class, "dod_zone") != -1)
+			&& StrContains(class, "sm_zone") != -1)
 			{
 				AcceptEntityInput(zone, "Kill");
 			}
 		}
 
 		// Then re-create zones depends on array size
-		for (z = 0; z < GetArraySize(ZonesArray); z++)
+		for (new z; z < GetArraySize(ZonesArray); z++)
 		{
 			SpawnZone(z);
 		}
 
-		for (z = 1; z <= MaxClients; z++) // Reset weapon punishments for all clients when round starts
+		for (new client = 1; client <= MaxClients; client++) // Reset weapon punishments for all clients when round starts
 		{
-			WeaponPunishment[z] = false;
+			WeaponPunishment[client] = false;
 		}
 	}
 }
@@ -362,7 +434,6 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
  * -------------------------------------------------------------------------- */
 public OnPlayerEvents(Handle:event, const String:name[], bool:dontBroadcast)
 {
-	// Allow player to use any weapon again
 	WeaponPunishment[GetClientOfUserId(GetEventInt(event, "userid"))] = false;
 }
 
@@ -372,31 +443,33 @@ public OnPlayerEvents(Handle:event, const String:name[], bool:dontBroadcast)
  * -------------------------------------------------------------------------- */
 public OnTouch(const String:output[], caller, activator, Float:delay)
 {
+	// Plugin enabled?
 	if (GetConVarBool(zones_enabled))
 	{
-		// Deal with valid 'activators'
+		// Activator is valid?
 		if (1 <= activator <= MaxClients)
 		{
-			if (IsClientInGame(activator) && IsPlayerAlive(activator))
+			// Yea, make sure activator in game
+			if (IsClientInGame(activator))
 			{
 				// Ignore immune admins
-				if (GetConVarBool(admin_immunity)
-				&& CheckCommandAccess(activator, "dod_zones_immunity", ADMFLAG_CONFIG, true))
+				if (GetConVarBool(admin_immunity) && CheckCommandAccess(activator, "sm_zones_immunity", ADMFLAG_CONFIG, true))
 				{
 					return;
 				}
 
 				// Get the name of a zone
-				decl String:targetname[MAX_ZONE_LENGTH+10], String:ZoneName[MAX_ZONE_LENGTH], i;
+				decl String:targetname[MAX_ZONE_LENGTH+9], String:ZoneName[MAX_ZONE_LENGTH], i;
 				GetEntPropString(caller, Prop_Data, "m_iName", targetname, sizeof(targetname));
 
 				// init punishments
-				new team = TEAM_ALL;
+				new team = CS_TEAM_NONE;
 				new punishment = INIT;
 				new real_punishment = GetConVarInt(zones_punishment);
+				new EngineVersion:version = GetEngineVersionCompat();
 
-				// Check whether or not that was StartTouch callback
-				new bool:StartTouch = StrEqual(output, "OnStartTouch", false);
+				// Check whether or not that was StartTouch callback. Also check if player is alive
+				new bool:StartTouch = (StrEqual(output, "OnStartTouch", false) && IsPlayerAlive(activator));
 
 				// Loop through all available zones
 				for (i = 0; i < GetArraySize(ZonesArray); i++)
@@ -404,13 +477,13 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 					new Handle:hZone = GetArrayCell(ZonesArray, i);
 					GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
-					// Ignore 'dod_zone ' prefix and check what zone we touched
-					if (StrEqual(ZoneName, targetname[9], false))
+					// Ignore 'sm_zone ' prefix and check what zone we touched
+					if (StrEqual(ZoneName, targetname[8], false))
 					{
 						// Then retrieve team and punishment
 						team       = GetArrayCell(hZone, ZONE_TEAM);
 						punishment = GetArrayCell(hZone, ZONE_PUNISHMENT);
-						if (team != TEAM_ALL && GetClientTeam(activator) != team)
+						if (team  != CS_TEAM_NONE && GetClientTeam(activator) != team)
 						{
 							// If team doesnt match, skip punishments
 							return;
@@ -419,13 +492,15 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				}
 
 				// If any punishment is used, set a real punishment value
-				if (punishment > INIT)
+				if (INIT < punishment < PUNISHMENTS_SIZE)
+				{
 					real_punishment = punishment;
+				}
 
 				switch (real_punishment)
 				{
-					// Just tell everybody
-					case ANNOUNCE: if (StartTouch) PrintToChatAll("%s%t", PREFIX, "Player Entered Zone", activator, targetname[9]);
+					// Just tell to everybody that some player entered protected zone
+					case ANNOUNCE: if (StartTouch && GetConVarBool(show_messages)) PrintToChatAll("%s%t", PREFIX, "Player Entered Zone", activator, targetname[8]);
 					case BOUNCE:
 					{
 						if (StartTouch)
@@ -451,41 +526,61 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							TeleportEntity(activator, NULL_VECTOR, NULL_VECTOR, vel);
 
 							// Set collision group to COLLISION_GROUP_PUSHAWAY if team is ANY or matches
-							SetEntProp(caller, Prop_Send, "m_CollisionGroup", team == TEAM_ALL || team == GetClientTeam(activator) ? 17 : 11);
+							SetEntProp(caller, Prop_Send, "m_CollisionGroup", team == CS_TEAM_NONE || team == GetClientTeam(activator) ? 17 : 11);
 
 							// Notify player about not allowing to enter there by default phrase from resources
-							PrintHintText(activator, "#Dod_wrong_way");
+							if (version == Engine_DODS) PrintHintText(activator, "#Dod_wrong_way");
 						}
-						// Otherwise make wall non-solid
-						else SetEntProp(caller, Prop_Send, "m_CollisionGroup", 11);
+						else SetEntProp(caller, Prop_Send, "m_CollisionGroup", 11); // Otherwise make wall non-solid
 					}
 					case SLAY:
 					{
+						// Check to prevent doubled message
 						if (StartTouch)
 						{
-							PrintToChatAll("%s%t", PREFIX, "Player Slayed", activator, targetname[9]);
-							ForcePlayerSuicide(activator);
+							// Oh and check whether or not show that zone
+							if (GetConVarBool(show_messages))
+							{
+								PrintToChatAll("%s%t", PREFIX, "Player Slayed", activator, targetname[8]);
+							}
+
+							if (version == Engine_DODS)
+							{
+								// Kill player using this native, because sometimes players wont die in DoD:S
+								SDKHooks_TakeDamage(activator, 0, 0, float(GetClientHealth(activator)));
+							}
+							else
+							{
+								// For other games use ForcePlayerSuicide
+								ForcePlayerSuicide(activator);
+							}
 						}
 					}
 					case NOSHOOT:
 					{
-						// Check if player has entered a zone
 						if (StartTouch)
 						{
 							// Notify player that he is not allowed to shoot
-							PrintToChat(activator, "%s%t", PREFIX, "Can't shoot");
-							WeaponPunishment[activator] = true;
+							if (GetConVarBool(show_messages))
+							{
+								PrintToChat(activator, "%s%t", PREFIX, "Can't shoot");
+							}
+
+							if (version != Engine_TF2) WeaponPunishment[activator] = true;
 						}
 						else // Nope - player just left zone
 						{
-							PrintToChat(activator, "%s%t", PREFIX, "Can shoot");
-							WeaponPunishment[activator] = false;
+							if (GetConVarBool(show_messages))
+							{
+								PrintToChat(activator, "%s%t", PREFIX, "Can shoot");
+							}
+
+							// Dont set weapon punishments for TF2 because players cant drop/equip weapons
+							if (version != Engine_TF2) WeaponPunishment[activator] = false;
 						}
 
 						new Float:time = GetGameTime();
-
-						// 47 offsets are available in m_hMyWeapons table
-						for (i = 0; i <= DOD_MAXWEAPONS; i++)
+						for (i = 0; i < MAX_WEAPONS; i++)
 						{
 							// Retrieve the all weapons of a player
 							new weapons = GetEntDataEnt2(activator, m_hMyWeapons + (i * 4));
@@ -493,13 +588,14 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							// Weapon is okay?
 							if (weapons != -1)
 							{
+								// I check for 'is player alive' because of 'no shoot' punishment
 								if (StartTouch)
 								{
 									// Then dont allow player to shoot by those weapons
 									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   time + 999.9);
 									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time + 999.9);
 								}
-								else
+								else // If player dies in that zone, he will not able to shoot on respawn, so this way works fine
 								{
 									// Otherwise if player left a zone - allow shooting
 									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   time);
@@ -518,11 +614,18 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							{
 								decl String:class[MAX_NAME_LENGTH];
 								GetEdictClassname(weapon, class, sizeof(class));
+
+								// Smoothly set player weapon to current melee
 								FakeClientCommand(activator, "use %s", class);
+
+								// If its wont work, make some backend weapon change
 								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
 							}
 
-							PrintToChat(activator, "%s%t", PREFIX, "Can use melee only");
+							if (GetConVarBool(show_messages))
+							{
+								PrintToChat(activator, "%s%t", PREFIX, "Can use melee only");
+							}
 
 							// Set boolean for weapon usage
 							WeaponPunishment[activator] = true;
@@ -530,7 +633,9 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						else
 						{
 							// When player leaves this zone (usually OnEndTouch callback is fired), allow other weapons usage and notify player
-							PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
+							if (GetConVarBool(show_messages))
+								PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
+
 							WeaponPunishment[activator] = false;
 						}
 					}
@@ -639,8 +744,8 @@ public Action:OnClientSayCommand(client, const String:command[], const String:sA
 		FileToKeyValues(kv, config);
 		if (!KvGotoFirstSubKey(kv))
 		{
-			// Whoops something wrong with a config
-			PrintToChat(client, "%sConfig file is empty. Can't edit it permanently!", PREFIX);
+			// Log an error if cant save zones config
+			PrintToChat(client, "%sCan't save config! \"data/zones\" folder is not exists ?!", PREFIX);
 			CloseHandle(kv);
 
 			// Redraw menu and discard changes
@@ -688,6 +793,58 @@ public Action:Command_Drop(client, const String:command[], args)
 	return WeaponPunishment[client] ? Plugin_Handled : Plugin_Continue;
 }
 
+/* Command_VoiceMenu()
+ *
+ * When the voice command is used.
+ * -------------------------------------------------------------------------- */
+public Action:Command_VoiceMenu(client, const String:command[], args)
+{
+	// Get full string of voicemenu command
+	decl String:buffer[8];
+	GetCmdArgString(buffer, sizeof(buffer));
+
+	// Medic command is used
+	if (StrEqual(buffer, "0 0", false))
+	{
+		// Does player got access to edit zones and currently editing a zone?
+		if (ZonePoint[client] != NO_POINT /* && CheckCommandAccess(client, "sm_zones_immunity", ADMFLAG_CONFIG, true) */)
+		{
+			// Yea, retrieve his origin
+			decl Float:origin[3];
+			GetClientAbsOrigin(client, origin);
+
+			// Player is editing first point
+			if (ZonePoint[client] == FIRST_POINT)
+			{
+				ZonePoint[client] = SECOND_POINT;
+				FirstZoneVector[client][0] = origin[0];
+				FirstZoneVector[client][1] = origin[1];
+				FirstZoneVector[client][2] = origin[2];
+
+				// Set zone vectors at player current position
+				PrintToChat(client, "%s%t", PREFIX, "Zone Edge");
+			}
+			else if (ZonePoint[client] == SECOND_POINT)
+			{
+				// Reset zone point, because player already got it
+				ZonePoint[client] = NO_POINT;
+				SecondZoneVector[client][0] = origin[0];
+				SecondZoneVector[client][1] = origin[1];
+				SecondZoneVector[client][2] = origin[2];
+
+				// Notify player that he done editing a zone
+				PrintToChat(client, "%s%t", PREFIX, "Type Zone Name");
+				NamesZone[client] = true;
+			}
+
+			// Dont perform 'medic' voice command.
+			return Plugin_Handled;
+		}
+	}
+
+	return Plugin_Continue;
+}
+
 /* Command_SetupZones()
  *
  * Shows a zones menu to a client.
@@ -701,7 +858,7 @@ public Action:Command_SetupZones(client, args)
 		return Plugin_Handled;
 	}
 
-	// Show a menu on !zones command
+	// Show a menu on zones command
 	ShowZonesMainMenu(client);
 	return Plugin_Handled;
 }
@@ -875,8 +1032,8 @@ ShowActiveZonesMenu(client)
 	// Set menu title
 	SetMenuTitle(menu, "%T:", "Active Zones", client);
 
-	decl String:name[PLATFORM_MAX_PATH], String:strnum[8], i;
-	for (i = 0; i < GetArraySize(ZonesArray); i++)
+	decl String:name[PLATFORM_MAX_PATH], String:strnum[8];
+	for (new i; i < GetArraySize(ZonesArray); i++)
 	{
 		// Loop through all zones in array
 		new Handle:hZone = GetArrayCell(ZonesArray, i);
@@ -936,18 +1093,17 @@ ShowActivatedZonesMenu(client)
 	new Handle:menu = CreateMenu(Menu_ActivatedZones);
 	SetMenuTitle(menu, "%T:", "Diactivated Zones", client);
 
-	// Initialize classname string and zone
-	decl String:class[MAX_ZONE_LENGTH], zone;
-
-	zone = INIT;
+	new zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
+		// Initialize classname string and zone
+		decl String:class[MAX_ZONE_LENGTH];
 		if (IsValidEntity(zone) && !GetEntProp(zone, Prop_Data, "m_bDisabled") // Dont add diactivated zones
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrContains(class, "dod_zone") != -1)
+		&& StrContains(class, "sm_zone") != -1)
 		{
-			// Set menu title and item info same as m_iName without dod_zone prefix
-			AddMenuItem(menu, class[9], class[9]);
+			// Set menu title and item info same as m_iName without sm_zone prefix
+			AddMenuItem(menu, class[8], class[8]);
 		}
 	}
 
@@ -994,20 +1150,18 @@ ShowDiactivatedZonesMenu(client)
 	new Handle:menu = CreateMenu(Menu_DiactivatedZones);
 	SetMenuTitle(menu, "%T:", "Activated Zones", client);
 
-	// declare
-	decl String:class[MAX_ZONE_LENGTH], zone;
-	zone = INIT;
-
 	// Search for any zones on a map
+	new zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		// If we found a zone, make sure its not diactivated
+		decl String:class[MAX_ZONE_LENGTH];
 		if (IsValidEntity(zone) && GetEntProp(zone, Prop_Data, "m_bDisabled")
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrContains(class, "dod_zone") != -1) // Does name contains 'dod_zone' prefix?
+		&& StrContains(class, "sm_zone") != -1) // Does name contains 'sm_zone' prefix?
 		{
 			// Add every disabled zone into diactivated menu
-			AddMenuItem(menu, class[9], class[9]);
+			AddMenuItem(menu, class[8], class[8]);
 		}
 	}
 
@@ -1058,13 +1212,13 @@ ShowZoneOptionsMenu(client)
 	if (EditingZone[client] != INIT)
 	{
 		// Get the zone name
-		decl String:ZoneName[MAX_ZONE_LENGTH], String:translation[128], String:buffer[128];
+		decl String:ZoneName[MAX_ZONE_LENGTH], String:translation[128], String:buffer[128], team;
 
 		new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
 		GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
 		// Get zone team restrictions
-		new team = GetArrayCell(hZone, ZONE_TEAM);
+		team = GetArrayCell(hZone, ZONE_TEAM);
 
 		// Create menu handler and set menu title
 		new Handle:menu = CreateMenu(Menu_ZoneOptions);
@@ -1086,7 +1240,7 @@ ShowZoneOptionsMenu(client)
 		AddMenuItem(menu, "teleport", translation);
 
 		// If team is more than 0, show team names
-		if (team > TEAM_ALL)
+		if (team > CS_TEAM_NONE)
 		{
 			GetTeamName(team, buffer, sizeof(buffer));
 		}
@@ -1133,7 +1287,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 		case MenuAction_Select:
 		{
 			// Get a config, menu item info and initialize everything else
-			decl String:config[PLATFORM_MAX_PATH], String:ZoneName[MAX_ZONE_LENGTH], String:info[11], Float:vec1[3], Float:vec2[3], color[4];
+			decl String:config[PLATFORM_MAX_PATH], String:ZoneName[MAX_ZONE_LENGTH], String:info[11], Float:vec1[3], Float:vec2[3], team;
 			GetMenuItem(menu, param, info, sizeof(info));
 			BuildPath(Path_SM, config, sizeof(config), "data/zones/%s.cfg", map);
 
@@ -1146,14 +1300,14 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 			GetArrayString(hZone, ZONE_NAME,     ZoneName, sizeof(ZoneName));
 
 			// Get the team restrictions
-			new team = GetArrayCell(hZone, ZONE_TEAM);
+			team = GetArrayCell(hZone, ZONE_TEAM);
 
 			// Now teleport player in center of a zone
 			if (StrEqual(info, "teleport", false))
 			{
 				decl Float:origin[3];
 				GetMiddleOfABox(vec1, vec2, origin);
-				TeleportEntity(client, origin, NULL_VECTOR, Float:{0.0, 0.0, 0.0});
+				TeleportEntity(client, origin, NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 });
 
 				// Redisplay the menu
 				ShowZoneOptionsMenu(client);
@@ -1164,38 +1318,38 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				switch (team)
 				{
 					// Both teams
-					case TEAM_ALL:
+					case CS_TEAM_NONE:
 					{
-						TeamZones[TEAM_ALLIES]--;
-						TeamZones[TEAM_AXIS]--;
+						TeamZones[CS_TEAM_T]--;
+						TeamZones[CS_TEAM_CT]--;
 					}
-					case TEAM_ALLIES: TeamZones[TEAM_ALLIES]--;
-					case TEAM_AXIS:   TeamZones[TEAM_AXIS]--;
+					case CS_TEAM_T:  TeamZones[CS_TEAM_T]--;
+					case CS_TEAM_CT: TeamZones[CS_TEAM_CT]--;
 				}
 
 				team++;
 
 				// If team is overbounding, make it as both
-				if (team > TEAM_AXIS)
+				if (team > CS_TEAM_CT)
 				{
-					team = TEAM_ALL;
+					team = CS_TEAM_NONE;
 				}
-				else if (team < TEAM_ALLIES)
+				else if (team < CS_TEAM_T)
 				{
 					// Same here, but set lowerbounds to first available team
-					team = TEAM_ALLIES;
+					team = CS_TEAM_T;
 				}
 
 				// Increase zone count on matches now
 				switch (team)
 				{
-					case TEAM_ALL:
+					case CS_TEAM_NONE:
 					{
-						TeamZones[TEAM_ALLIES]++;
-						TeamZones[TEAM_AXIS]++;
+						TeamZones[CS_TEAM_T]++;
+						TeamZones[CS_TEAM_CT]++;
 					}
-					case TEAM_ALLIES: TeamZones[TEAM_ALLIES]++;
-					case TEAM_AXIS:   TeamZones[TEAM_AXIS]++;
+					case CS_TEAM_T:  TeamZones[CS_TEAM_T]++;
+					case CS_TEAM_CT: TeamZones[CS_TEAM_CT]++;
 				}
 
 				// Set the team in array
@@ -1223,7 +1377,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 					if (StrEqual(buffer, ZoneName, false))
 					{
 						// Don't add punishments section if no punishment is defined
-						if (team == TEAM_ALL)
+						if (team == CS_TEAM_NONE)
 						{
 							KvDeleteKey(kv, "restrict_team");
 						}
@@ -1312,14 +1466,6 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 
 				if (IsVectorZero(FirstZoneVector[client]) && IsVectorZero(SecondZoneVector[client]))
 				{
-					// Define a color depends on team
-					switch (team)
-					{
-						case TEAM_ALLIES: color = { 255, 0,   0,   255 };
-						case TEAM_AXIS:   color = { 0,   255, 0,   255 };
-						default:          color = { 255, 255, 255, 255 };
-					}
-
 					// Clear vectors on every selection
 					ClearVector(FirstZoneVector[client]);
 					ClearVector(SecondZoneVector[client]);
@@ -1330,7 +1476,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				}
 
 				// Always show a zone box
-				TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
+				TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, TeamColors[team], 0);
 
 				// Highlight the currently edited edge for players editing a zone
 				if (EditingVector[client] == FIRST_VECTOR)
@@ -1437,12 +1583,17 @@ ShowZoneVectorEditMenu(client)
 		Format(translation, sizeof(translation), "%T", "Subtract from Z", client);
 		AddMenuItem(menu, "sz", translation);
 
-		// And add save option
-		Format(translation, sizeof(translation), "%T", "Save", client);
+		// Add save option
+		Format(translation, sizeof(translation), "%T\n \n", "Save", client);
 		AddMenuItem(menu, "save", translation);
+
+		// Add \n \n in save option to make spacer between 7 and 8 buttons
+		Format(translation, sizeof(translation), "%T", "Back", client);
+		AddMenuItem(menu, "back", translation);
 
 		// Also add 'Back' button and show menu as long as possible
 		SetMenuExitBackButton(menu, true);
+		SetMenuPagination(menu, MENU_NO_PAGINATION);
 		DisplayMenu(menu, client, MENU_TIME_FOREVER);
 	}
 }
@@ -1457,7 +1608,8 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 	{
 		case MenuAction_Select:
 		{
-			decl String:info[5], color[4];
+			// Fix for 'array index is out of bounds'
+			decl String:info[5], team; team = CS_TEAM_NONE;
 			GetMenuItem(menu, param, info, sizeof(info));
 
 			// Save the new coordinates to the file and the array
@@ -1465,7 +1617,6 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 			{
 				// The dynamic array cache
 				decl String:ZoneName[MAX_ZONE_LENGTH];
-
 				new Handle:hZone = GetArrayCell(ZonesArray, EditingZone[client]);
 
 				// Retrieve zone name and appropriately set zone vector (client info) on every selection
@@ -1473,16 +1624,8 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 				SetArrayArray(hZone,  FIRST_VECTOR,  FirstZoneVector[client],  VECTORS_SIZE);
 				SetArrayArray(hZone,  SECOND_VECTOR, SecondZoneVector[client], VECTORS_SIZE);
 
-				// Get team
-				new team = GetArrayCell(hZone, ZONE_TEAM);
-
-				// Change colors appropriately
-				switch (team)
-				{
-					case TEAM_ALLIES: color = { 255, 0,   0,   255 }; // Red
-					case TEAM_AXIS:   color = { 0,   255, 0,   255 }; // Green
-					default:          color = { 255, 255, 255, 255 }; // White
-				}
+				// Fix 'array index is out of bounds'
+				team = GetArrayCell(hZone, ZONE_TEAM);
 
 				// Re-spawn zone when its saved (its better, trust me)
 				KillZone(EditingZone[client]);
@@ -1594,7 +1737,7 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 			}
 
 			// Always show a zone box on every selection
-			TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
+			TE_SendBeamBoxToClient(client, FirstZoneVector[client], SecondZoneVector[client], LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, TeamColors[team], 0);
 
 			// Highlight the currently edited edge for players editing a zone
 			if (EditingVector[client] == FIRST_VECTOR)
@@ -1608,8 +1751,12 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 				TE_SendToClient(client);
 			}
 
-			// Redisplay the menu
-			ShowZoneVectorEditMenu(client);
+			if (!StrEqual(info, "back", false))
+			{
+				// Redisplay the menu if no 'back' button were pressed
+				ShowZoneVectorEditMenu(client);
+			}
+			else ShowZoneOptionsMenu(client); // Otherwise go into main menu
 		}
 		case MenuAction_Cancel:
 		{
@@ -1741,7 +1888,7 @@ public Menu_SaveZone(Handle:menu, MenuAction:action, client, param)
 				PushArrayArray(TempArray, SecondZoneVector[client], VECTORS_SIZE);
 
 				// Set the team to both by default
-				PushArrayCell(TempArray, TEAM_ALL);
+				PushArrayCell(TempArray, CS_TEAM_NONE);
 
 				// Set the zones_punishment to default (defined by ConVar)
 				PushArrayCell(TempArray, INIT);
@@ -1883,10 +2030,10 @@ public Action:Timer_ShowZones(Handle:timer)
 	if (GetConVarBool(zones_enabled))
 	{
 		// Get all zones
-		for (new i = 0; i < GetArraySize(ZonesArray); i++)
+		for (new i; i < GetArraySize(ZonesArray); i++)
 		{
-			// Initialize positions, color, team index and other stuff
-			decl Float:pos1[3], Float:pos2[3], color[4], team, client;
+			// Initialize positions, team index and other stuff
+			decl Float:pos1[3], Float:pos2[3], team, client;
 			new Handle:hZone = GetArrayCell(ZonesArray, i);
 
 			// Retrieve positions from array
@@ -1896,14 +2043,6 @@ public Action:Timer_ShowZones(Handle:timer)
 			// Get team
 			team = GetArrayCell(hZone, ZONE_TEAM);
 
-			// Set color for zone respectivitely
-			switch (team)
-			{
-				case TEAM_ALLIES: color = { 255, 0,   0,   255 };
-				case TEAM_AXIS:   color = { 0,   255, 0,   255 };
-				default:          color = { 255, 255, 255, 255 };
-			}
-
 			// Loop through all clients
 			for (client = 1; client <= MaxClients; client++)
 			{
@@ -1912,14 +2051,14 @@ public Action:Timer_ShowZones(Handle:timer)
 					// If player is editing a zones - show all zones then
 					if (EditingZone[client] != INIT)
 					{
-						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
+						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, TeamColors[team], 0);
 					}
 
 					// Otherwise always show zones if plugin is set it to true
-					else if (GetConVarBool(show_zones) && (team == TEAM_ALL || (GetClientTeam(client) == team)))
+					else if (GetConVarBool(show_zones) && (team == CS_TEAM_NONE || (GetClientTeam(client) == team)))
 					{
 						// Also dont show friendly zones at all
-						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, color, 0);
+						TE_SendBeamBoxToClient(client, pos1, pos2, LaserMaterial, HaloMaterial, 0, 30, LIFETIME_INTERVAL, 5.0, 5.0, 2, 1.0, TeamColors[team], 0);
 					}
 				}
 			}
@@ -1975,20 +2114,20 @@ ParseZoneConfig()
 			PushArrayArray(TempArray, vector, VECTORS_SIZE);
 
 			// Get the team restrictions
-			new team = KvGetNum(kv, "restrict_team", TEAM_ALL);
+			new team = KvGetNum(kv, "restrict_team", CS_TEAM_NONE);
 			PushArrayCell(TempArray, team);
 
 			// Increase zone count on match
 			switch(team)
 			{
 				// For both teams
-				case TEAM_ALL:
+				case CS_TEAM_NONE:
 				{
-					TeamZones[TEAM_ALLIES]++;
-					TeamZones[TEAM_AXIS]++;
+					TeamZones[CS_TEAM_T]++;
+					TeamZones[CS_TEAM_CT]++;
 				}
-				case TEAM_ALLIES: TeamZones[TEAM_ALLIES]++;
-				case TEAM_AXIS:   TeamZones[TEAM_AXIS]++;
+				case CS_TEAM_T:  TeamZones[CS_TEAM_T]++;
+				case CS_TEAM_CT: TeamZones[CS_TEAM_CT]++;
 			}
 
 			// Get the punishments
@@ -2021,15 +2160,14 @@ ParseZoneConfig()
  * -------------------------------------------------------------------------- */
 ActivateZone(const String:text[])
 {
-	decl String:class[MAX_ZONE_LENGTH+10], zone;
-	zone = INIT;
-
 	// Make sure at least one zone entity is exists
+	new zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
+		decl String:class[MAX_ZONE_LENGTH+9];
 		if (IsValidEntity(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrEqual(class[9], text, false)) // Skip first 9 characters to avoid comparing with 'dod_zone' prefix
+		&& StrEqual(class[8], text, false)) // Skip first 8 characters to avoid comparing with 'sm_zone' prefix
 		{
 			// Found - activate a zone and break the loop (optimizations)
 			AcceptEntityInput(zone, "Enable");
@@ -2044,17 +2182,16 @@ ActivateZone(const String:text[])
  * -------------------------------------------------------------------------- */
 DiactivateZone(const String:text[])
 {
-	decl String:class[MAX_ZONE_LENGTH+10], zone;
-
-	zone = INIT;
+	new zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		// Same checks as usual
+		decl String:class[MAX_ZONE_LENGTH+9];
 		if (IsValidEntity(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrEqual(class[9], text, false))
+		&& StrEqual(class[8], text, false))
 		{
-			// Retrieve names of every entity, and if name contains "dod_zone" text - just disable this entity
+			// Retrieve names of every entity, and if name contains "sm_zone" text - just disable this entity
 			AcceptEntityInput(zone, "Disable");
 			break;
 		}
@@ -2067,7 +2204,7 @@ DiactivateZone(const String:text[])
  * -------------------------------------------------------------------------- */
 SpawnZone(zoneIndex)
 {
-	decl Float:middle[3], Float:m_vecMins[3], Float:m_vecMaxs[3], String:ZoneName[MAX_ZONE_LENGTH+10];
+	decl Float:middle[3], Float:m_vecMins[3], Float:m_vecMaxs[3], String:ZoneName[MAX_ZONE_LENGTH+9];
 
 	// Get zone index from array
 	new Handle:hZone = GetArrayCell(ZonesArray, zoneIndex);
@@ -2079,7 +2216,7 @@ SpawnZone(zoneIndex)
 	new zone = CreateEntityByName("trigger_multiple");
 
 	// Set name
-	Format(ZoneName, sizeof(ZoneName), "dod_zone %s", ZoneName);
+	Format(ZoneName, sizeof(ZoneName), "sm_zone %s", ZoneName);
 	DispatchKeyValue(zone, "targetname", ZoneName);
 	DispatchKeyValue(zone, "spawnflags", "64");
 	DispatchKeyValue(zone, "wait",       "0");
@@ -2148,18 +2285,18 @@ SpawnZone(zoneIndex)
  * -------------------------------------------------------------------------- */
 KillZone(zoneIndex)
 {
-	decl String:ZoneName[MAX_ZONE_LENGTH], String:class[MAX_ZONE_LENGTH+10], zone;
+	decl String:ZoneName[MAX_ZONE_LENGTH], String:class[MAX_ZONE_LENGTH+9];
 
 	// Get the zone index and name of a zone
 	new Handle:hZone = GetArrayCell(ZonesArray, zoneIndex);
 	GetArrayString(hZone, ZONE_NAME, ZoneName, sizeof(ZoneName));
 
-	zone = INIT;
+	new zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		if (IsValidEntity(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class)) // Get m_iName datamap
-		&& StrEqual(class[9], ZoneName, false)) // And check if m_iName is equal to name from array
+		&& StrEqual(class[8], ZoneName, false)) // And check if m_iName is equal to name from array
 		{
 			// Unhook touch callback, kill an entity and break the loop
 			UnhookSingleEntityOutput(zone, "OnStartTouch", OnTouch);
@@ -2188,7 +2325,7 @@ KillZone(zoneIndex)
 CloseHandleArray(Handle:adt_array)
 {
 	// Loop through all array handles
-	for (new i = 0; i < GetArraySize(adt_array); i++)
+	for (new i; i < GetArraySize(adt_array); i++)
 	{
 		// Retrieve cell value from array, and close it
 		new Handle:hZone = GetArrayCell(adt_array, i);
@@ -2259,12 +2396,14 @@ TE_SendBeamBoxToClient(client, const Float:upc[3], const Float:btc[3], ModelInde
 	decl Float:tc4[] = {0.0, 0.0, 0.0};
 	decl Float:tc5[] = {0.0, 0.0, 0.0};
 	decl Float:tc6[] = {0.0, 0.0, 0.0};
+
 	AddVectors(tc1, upc, tc1);
 	AddVectors(tc2, upc, tc2);
 	AddVectors(tc3, upc, tc3);
 	AddVectors(tc4, btc, tc4);
 	AddVectors(tc5, btc, tc5);
 	AddVectors(tc6, btc, tc6);
+
 	tc1[0] = btc[0];
 	tc2[1] = btc[1];
 	tc3[2] = btc[2];
@@ -2297,4 +2436,125 @@ TE_SendBeamBoxToClient(client, const Float:upc[3], const Float:btc[3], ModelInde
 	TE_SendToClient(client);
 	TE_SetupBeamPoints(tc4, tc2, ModelIndex, HaloIndex, StartFrame, FrameRate, Life, Width, EndWidth, FadeLength, Amplitude, Color, Speed);
 	TE_SendToClient(client);
+}
+
+/* GetSendPropOffset()
+ *
+ * Returns the offset of the specified network property.
+ * --------------------------------------------------------------------------- */
+GetSendPropOffset(const String:serverClass[64], const String:propName[64])
+{
+	new offset = FindSendPropOffs(serverClass, propName);
+
+	// Disable plugin if a networkable send property offset was not found
+	if (offset <= 0)
+	{
+		SetFailState("Unable to find offset: \"%s::%s\"!", serverClass, propName);
+	}
+
+	return offset;
+}
+
+stock EngineVersion:GetEngineVersionCompat()
+{
+	new EngineVersion:version;
+	if (GetFeatureStatus(FeatureType_Native, "GetEngineVersion") != FeatureStatus_Available)
+	{
+		new sdkVersion = GuessSDKVersion();
+		switch (sdkVersion)
+		{
+			case SOURCE_SDK_ORIGINAL:
+			{
+				version = Engine_Original;
+			}
+
+			case SOURCE_SDK_DARKMESSIAH:
+			{
+				version = Engine_DarkMessiah;
+			}
+
+			case SOURCE_SDK_EPISODE1:
+			{
+				version = Engine_SourceSDK2006;
+			}
+
+			case SOURCE_SDK_EPISODE2:
+			{
+				version = Engine_SourceSDK2007;
+			}
+
+			case SOURCE_SDK_BLOODYGOODTIME:
+			{
+				version = Engine_BloodyGoodTime;
+			}
+
+			case SOURCE_SDK_EYE:
+			{
+				version = Engine_EYE;
+			}
+
+			case SOURCE_SDK_CSS:
+			{
+				version = Engine_CSS;
+			}
+
+			case SOURCE_SDK_EPISODE2VALVE:
+			{
+				decl String:gameFolder[PLATFORM_MAX_PATH];
+				GetGameFolderName(gameFolder, PLATFORM_MAX_PATH);
+				if (StrEqual(gameFolder, "dod", false))
+				{
+					version = Engine_DODS;
+				}
+				else if (StrEqual(gameFolder, "hl2mp", false))
+				{
+					version = Engine_HL2DM;
+				}
+				else
+				{
+					version = Engine_TF2;
+				}
+			}
+
+			case SOURCE_SDK_LEFT4DEAD:
+			{
+				version = Engine_Left4Dead;
+			}
+
+			case SOURCE_SDK_LEFT4DEAD2:
+			{
+				decl String:gameFolder[PLATFORM_MAX_PATH];
+				GetGameFolderName(gameFolder, PLATFORM_MAX_PATH);
+				if (StrEqual(gameFolder, "nucleardawn", false))
+				{
+					version = Engine_NuclearDawn;
+				}
+				else
+				{
+					version = Engine_Left4Dead2;
+				}
+			}
+
+			case SOURCE_SDK_ALIENSWARM:
+			{
+				version = Engine_AlienSwarm;
+			}
+
+			case SOURCE_SDK_CSGO:
+			{
+				version = Engine_CSGO;
+			}
+
+			default:
+			{
+				version = Engine_Unknown;
+			}
+		}
+	}
+	else
+	{
+		version = GetEngineVersion();
+	}
+
+	return version;
 }

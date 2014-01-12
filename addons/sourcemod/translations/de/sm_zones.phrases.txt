@@ -14,7 +14,7 @@
 	}
 	"Type Zone Name"
 	{
-		"de"			"Bitte schreibe einen Namen fuer diese Zone in den Chat. Schreibe !stop um abzubrechen."
+		"de"			"Bitte schreibe einen Namen fuer diese Zone in den Chat. Schreibe !stop oder !cancel um abzubrechen."
 	}
 	"Abort Zone Name"
 	{
@@ -34,7 +34,7 @@
 	}
 	"Save"
 	{
-		"de"			"Speichern"
+		"de"			"Sparen Zone Koordinationen (wichtig!)"
 	}
 	"Name Already Taken"
 	{
