@@ -47,6 +47,11 @@
 	{
 		"en"			"Saved changes successfully."
 	}
+	"Cant save"
+	{
+		"#format"		"{1:s}"
+		"en"			"Could not save zones config! Make sure \"{1}\" file is writeable."
+	}
 	"Discard"
 	{
 		"en"			"Discard"

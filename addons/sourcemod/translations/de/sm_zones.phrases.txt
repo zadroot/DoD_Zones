@@ -36,6 +36,11 @@
 	{
 		"de"			"Sparen Zone Koordinationen (wichtig!)"
 	}
+	"Cant save"
+	{
+		"#format"		"{1:s}"
+		"de"			"Could not save zones config! Make sure \"{1}\" file is writeable."
+	}
 	"Name Already Taken"
 	{
 		"de"			"Eine Zone mit dem Namen \"{1}\" existiert bereits. Bitte verwende einen anderen Namen."
