@@ -53,6 +53,7 @@ enum
 	SLAY,
 	NOSHOOT,
 	MELEE,
+	CUSTOM,
 
 	PUNISHMENTS_SIZE
 }
@@ -77,7 +78,7 @@ new	Handle:AdminMenuHandle  = INVALID_HANDLE,
 	Handle:show_messages    = INVALID_HANDLE,
 	Handle:show_zones       = INVALID_HANDLE;
 
-// ====[ GLOBALS ]===========================================================
+// ====[ ARRAYS ]============================================================
 new	EditingZone[MAXPLAYERS + 1]           = { INIT,     ... },
 	EditingVector[MAXPLAYERS + 1]         = { INIT,     ... },
 	ZonePoint[MAXPLAYERS + 1]             = { NO_POINT, ... },
@@ -87,6 +88,7 @@ new	EditingZone[MAXPLAYERS + 1]           = { INIT,     ... },
 	Float:FirstZoneVector[MAXPLAYERS + 1][3],
 	Float:SecondZoneVector[MAXPLAYERS + 1][3];
 
+// ====[ GLOBALS ]===========================================================
 new	bool:bLate,
 	m_hMyWeapons,
 	m_flNextPrimaryAttack,
@@ -98,7 +100,9 @@ new	bool:bLate,
 	String:map[64],
 	String:PREFIX[32],
 	TeamZones[TEAM_SIZE],
-	TeamColors[TEAM_SIZE][4];
+	TeamColors[TEAM_SIZE][4],
+	Handle:OnEnteredProtectedZone,
+	Handle:OnLeftProtectedZone;
 
 // ====[ PLUGIN ]============================================================
 public Plugin:myinfo =
@@ -146,7 +150,7 @@ public OnPluginStart()
 	CreateConVar("dod_zones_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 
 	zones_enabled    = CreateConVar("sm_zones_enable",         "1", "Whether or not enable Zones plugin", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	zones_punishment = CreateConVar("sm_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay player\n4 = Dont allow to shoot\n5 = Allow only melee weapon", FCVAR_PLUGIN, true, 1.0, true, 5.0);
+	zones_punishment = CreateConVar("sm_zones_punishment",     "2", "Determines how plugin should handle players who entered a zone (by default):\n1 = Announce in chat\n2 = Bounce back\n3 = Slay player\n4 = Dont allow to shoot\n5 = Allow only melee weapon\n6 = Custom punishment", FCVAR_PLUGIN, true, 1.0, true, 6.0);
 	admin_immunity   = CreateConVar("sm_zones_admin_immunity", "0", "Whether or not allow admins to across zones without any punishments and notificaions", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	show_messages    = CreateConVar("sm_zones_show_messages",  "1", "Whether or not show messages in chat to player that entered protected zone", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	show_zones       = CreateConVar("sm_zones_show",           "0", "Whether or not show the zones on a map all the times", FCVAR_PLUGIN, true, 0.0, true, 1.0);
@@ -177,7 +181,6 @@ public OnPluginStart()
 	TeamColors[CS_TEAM_T]    = { 255, 0,   0,   255 }; // Red
 	TeamColors[CS_TEAM_CT]   = { 0,   0, 255,   255 }; // Blue
 
-	// Thanks to Powerlord for this stock
 	new EngineVersion:version = GetEngineVersionCompat();
 	switch (version)
 	{
@@ -231,6 +234,10 @@ public OnPluginStart()
 
 	// Create a zones array
 	ZonesArray = CreateArray();
+
+	// Global forwards for custom punishment
+	OnEnteredProtectedZone = CreateGlobalForward("OnEnteredProtectedZone", ET_Event, Param_Cell, Param_String);
+	OnLeftProtectedZone    = CreateGlobalForward("OnLeftProtectedZone",    ET_Event, Param_Cell, Param_String);
 
 	// And create/load plugin's config
 	AutoExecConfig(true, "sm_zones");
@@ -350,7 +357,7 @@ public OnClientPutInServer(client)
 	SDKHook(client, SDKHook_WeaponCanUse, OnWeaponUsage);
 	SDKHook(client, SDKHook_WeaponEquip,  OnWeaponUsage);
 
-	// Reset everything
+	// Reset everything when the player connects
 	EditingZone[client] =
 	EditingVector[client] = INIT;
 	ZonePoint[client] =
@@ -461,7 +468,7 @@ public OnPlayerEvents(Handle:event, const String:name[], bool:dontBroadcast)
  * -------------------------------------------------------------------------- */
 public OnTouch(const String:output[], caller, activator, Float:delay)
 {
-	// Plugin is enabled?
+	// Check whether or not plugin is enabled
 	if (GetConVarBool(zones_enabled))
 	{
 		if (1 <= activator <= MaxClients)
@@ -536,7 +543,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 								vel[1] = 200.0;
 							else if (vel[1] < 0.0 && vel[1] > -200.0)
 								vel[1] = -200.0;
-							if (vel[2] > 0.0) // Never push the activator up!
+							if (vel[2] > 0.0) // Never push the activator up
 								vel[2] *= -0.1;
 
 							// So move it
@@ -634,6 +641,20 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							WeaponPunishment[activator] = false;
 							if (messages) PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
 						}
+					}
+					case CUSTOM:
+					{
+						// Start appropriate OnEntered/Left zone forwards in custom punishment to deal with other plugins
+						Call_StartForward(StartTouch ? OnEnteredProtectedZone : OnLeftProtectedZone);
+
+						// Add activator id to the forward
+						Call_PushCell(activator);
+
+						// Add zones prefix for this forward, so plugins can print messages with proper prefix
+						Call_PushString(PREFIX);
+
+						// And finally call the forward
+						Call_Finish();
 					}
 				}
 			}
@@ -1246,12 +1267,13 @@ ShowZoneOptionsMenu(client)
 		switch (GetArrayCell(hZone, ZONE_PUNISHMENT))
 		{
 			// No individual zones_punishment selected. Using default one (which is defined in ConVar)
-			case INIT:     Format(buffer, sizeof(buffer), "%T", "Default",       client);
-			case ANNOUNCE: Format(buffer, sizeof(buffer), "%T", "Print Message", client);
-			case BOUNCE:   Format(buffer, sizeof(buffer), "%T", "Bounce Back",   client);
-			case SLAY:     Format(buffer, sizeof(buffer), "%T", "Slay player",   client);
-			case NOSHOOT:  Format(buffer, sizeof(buffer), "%T", "No shooting",   client);
-			case MELEE:    Format(buffer, sizeof(buffer), "%T", "Only Melee",    client);
+			case INIT:     Format(buffer, sizeof(buffer), "%T", "Default",           client);
+			case ANNOUNCE: Format(buffer, sizeof(buffer), "%T", "Print Message",     client);
+			case BOUNCE:   Format(buffer, sizeof(buffer), "%T", "Bounce Back",       client);
+			case SLAY:     Format(buffer, sizeof(buffer), "%T", "Slay player",       client);
+			case NOSHOOT:  Format(buffer, sizeof(buffer), "%T", "No shooting",       client);
+			case MELEE:    Format(buffer, sizeof(buffer), "%T", "Only Melee",        client);
+			case CUSTOM:   Format(buffer, sizeof(buffer), "%T", "Custom Punishment", client);
 		}
 
 		// Update punishment info
@@ -1307,10 +1329,9 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 			}
 			else if (StrEqual(info, "team", false))
 			{
-				// When team is selected, decrease TeamZones int for a while
+				// When team is selected, decrease TeamZones number
 				switch (team)
 				{
-					// Both teams
 					case CS_TEAM_NONE:
 					{
 						TeamZones[CS_TEAM_T]--;
@@ -1322,7 +1343,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 
 				team++;
 
-				// If team is overbounding, make it as both
+				// If team is overbounding, make zones punishment for both teams
 				if (team > CS_TEAM_CT)
 				{
 					team = CS_TEAM_NONE;
@@ -1396,14 +1417,13 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				new real_punishment = GetArrayCell(hZone, ZONE_PUNISHMENT) + 1;
 
 				//real_punishment++;
-				if (real_punishment > MELEE)
+				if (real_punishment > CUSTOM)
 				{
 					// Re-init punishments on overbounds
 					real_punishment = INIT;
 				}
 				else if (real_punishment < ANNOUNCE)
 				{
-					// Same here
 					real_punishment = ANNOUNCE;
 				}
 
@@ -1640,7 +1660,7 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 					CloseHandle(kv);
 					ShowZoneVectorEditMenu(client);
 
-					// Error!
+					// Error
 					PrintToChat(client, "%s%t", PREFIX, "Cant save", map);
 					return;
 				}
