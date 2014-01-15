@@ -9,18 +9,29 @@ public Plugin:myinfo =
 
 public Action:OnEnteredProtectedZone(client, const String:prefix[])
 {
+	static Handle:ShowZones   = INVALID_HANDLE;
+	if (!ShowZones) ShowZones = FindConVar("sm_zones_show_messages");
+
 	if (1 <= client <= MaxClients)
 	{
-		PrintToChatAll("%sYou have entered custom zone.", prefix);
+		if (GetConVarBool(ShowZones)
+		{
+			PrintToChat(client, "%sYou have entered custom zone.", prefix);
+		}
 	}
 }
 
 public Action:OnLeftProtectedZone(client, const String:prefix[])
 {
+	static Handle:ShowZones   = INVALID_HANDLE;
+	if (!ShowZones) ShowZones = FindConVar("sm_zones_show_messages");
+
 	if (1 <= client <= MaxClients)
 	{
 		// It's also called whenever player dies within a zone, so dont show a message if player died there
-		if (IsPlayerAlive(cleint))
-			PrintToChatAll("%sYou have left custom zone.", prefix);
+		if (GetConVarBool(ShowZones) && IsPlayerAlive(cleint))
+		{
+			PrintToChat(client, "%sYou have left custom zone.", prefix);
+		}
 	}
 }

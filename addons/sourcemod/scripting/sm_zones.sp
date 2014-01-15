@@ -22,7 +22,6 @@
 
 #define ZONES_MODEL       "models/error.mdl" // This model exists in any source game
 #define INIT              -1
-#define SLOT_MELEE        2
 #define TEAM_SIZE         4
 #define MAX_ZONE_LENGTH   64
 #define LIFETIME_INTERVAL 5.0
@@ -90,6 +89,7 @@ new	EditingZone[MAXPLAYERS + 1]           = { INIT,     ... },
 
 // ====[ GLOBALS ]===========================================================
 new	bool:bLate,
+	bool:IsTF2,
 	m_hMyWeapons,
 	m_flNextPrimaryAttack,
 	m_flNextSecondaryAttack,
@@ -200,6 +200,8 @@ public OnPluginStart()
 		}
 		case Engine_TF2:
 		{
+			// Set boolean for optimizations purpose
+			IsTF2  = true;
 			PREFIX = "\x01[\x04TF2 Zones\x01] >> \x07FFFF00";
 
 			// In TF2 hook voicemenu command to check whether or not 'medic' command was used
@@ -290,13 +292,13 @@ public OnMapStart()
 	decl String:curmap[64];
 	GetCurrentMap(curmap, sizeof(curmap));
 
-	// Does current map string is contains a "workshop" word ?
+	// Does current map string is contains a "workshop" word?
 	if (StrContains(curmap, "workshop", false) != -1)
 	{
 		// If yes - skip the first 19 characters to avoid comparing the "workshop/12345678" prefix
 		strcopy(map, sizeof(map), curmap[19]);
 	}
-	else /* That's not a workshop map */
+	else /*That's not a workshop map*/
 	{
 		strcopy(map, sizeof(map), curmap);
 	}
@@ -352,10 +354,14 @@ public OnMapStart()
  * -------------------------------------------------------------------------- */
 public OnClientPutInServer(client)
 {
-	// Optionally hook some weapon forwards for weapon punishments
-	SDKHook(client, SDKHook_WeaponSwitch, OnWeaponUsage);
-	SDKHook(client, SDKHook_WeaponCanUse, OnWeaponUsage);
-	SDKHook(client, SDKHook_WeaponEquip,  OnWeaponUsage);
+	// Ignore hooks in TF2
+	if (!IsTF2)
+	{
+		// Optionally hook some weapon forwards for weapon punishments
+		SDKHook(client, SDKHook_WeaponSwitch, OnWeaponUsage);
+		SDKHook(client, SDKHook_WeaponCanUse, OnWeaponUsage);
+		SDKHook(client, SDKHook_WeaponEquip,  OnWeaponUsage);
+	}
 
 	// Reset everything when the player connects
 	EditingZone[client] =
@@ -422,7 +428,7 @@ public Action:OnPlayerRunCmd(client, &buttons)
  * -------------------------------------------------------------------------- */
 public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 {
-	// Does plugin is enabled ?
+	// Does plugin is enabled?
 	if (GetConVarBool(zones_enabled))
 	{
 		decl String:class[MAX_ZONE_LENGTH], zone, z;
@@ -446,8 +452,10 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 			SpawnZone(z);
 		}
 
-		for (z = 1; z <= MaxClients; z++) // Reset weapon punishments for all clients when round starts
+		// Reset weapon punishments for all clients when round starts
+		for (z = 1; z <= MaxClients; z++)
 		{
+			// Because its called before player spawns
 			WeaponPunishment[z] = false;
 		}
 	}
@@ -459,6 +467,7 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
  * -------------------------------------------------------------------------- */
 public OnPlayerEvents(Handle:event, const String:name[], bool:dontBroadcast)
 {
+	// When player dies or respawns, allow player to use all weapons again
 	WeaponPunishment[GetClientOfUserId(GetEventInt(event, "userid"))] = false;
 }
 
@@ -523,8 +532,14 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 
 				switch (real_punishment)
 				{
-					// Just tell to everybody that some player entered protected zone
-					case ANNOUNCE: if (StartTouch && messages) PrintToChatAll("%s%t", PREFIX, "Player Entered Zone", activator, targetname[8]);
+					case ANNOUNCE:
+					{
+						if (StartTouch)
+						{
+							// Just tell to everybody that some player entered protected zone
+							PrintToChatAll("%s%t", PREFIX, "Player Entered Zone", activator, targetname[8]);
+						}
+					}
 					case BOUNCE:
 					{
 						if (StartTouch)
@@ -582,13 +597,13 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						{
 							// Notify player that he is not allowed to shoot
 							if (messages) PrintToChat(activator, "%s%t", PREFIX, "Can't shoot");
-							if (version != Engine_TF2) WeaponPunishment[activator] = true;
+							if (!IsTF2)   WeaponPunishment[activator] = true;
 						}
 						else // Nope - player just left zone
 						{
 							// Dont set weapon punishments for TF2 because players cant drop/equip weapons
 							if (messages) PrintToChat(activator, "%s%t", PREFIX, "Can shoot");
-							if (version != Engine_TF2) WeaponPunishment[activator] = false;
+							if (!IsTF2)   WeaponPunishment[activator] = false;
 						}
 
 						new weapons = -1, Float:time = GetGameTime();
@@ -617,28 +632,44 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 					{
 						if (StartTouch)
 						{
-							// Manually change player's weapon to melee
-							new weapon = GetPlayerWeaponSlot(activator, SLOT_MELEE);
-							if (IsValidEntity(weapon))
+							if (IsTF2)
 							{
-								decl String:class[MAX_NAME_LENGTH];
-								GetEdictClassname(weapon, class, sizeof(class));
-
-								// Smoothly set player weapon to current melee
-								FakeClientCommand(activator, "use %s", class);
-
-								// If its wont work, force to change it over network
-								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+								// For TF2 set existed condition to dont allow player to go away from melee weapon
+								TF2_AddCondition(activator, TFCond:TFCond_RestrictToMelee, 999.9);
 							}
+							else
+							{
+								// Manually change player's weapon to melee
+								new weapon = GetPlayerWeaponSlot(activator, TFWeaponSlot_Melee);
+								if (IsValidEntity(weapon))
+								{
+									decl String:class[MAX_NAME_LENGTH];
+									GetEdictClassname(weapon, class, sizeof(class));
 
-							// Set boolean for weapon usage
-							WeaponPunishment[activator] = true;
+									// Smoothly set player weapon to current melee
+									FakeClientCommand(activator, "use %s", class);
+
+									// If its wont work, force to change it over network
+									SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+								}
+
+								// Set boolean for weapon usage
+								WeaponPunishment[activator] = true;
+							}
 							if (messages) PrintToChat(activator, "%s%t", PREFIX, "Can use melee only");
 						}
 						else
 						{
-							// When player leaves this zone (usually OnEndTouch callback is fired), allow other weapons usage and notify player
-							WeaponPunishment[activator] = false;
+							if (IsTF2)
+							{
+								// Remove TFCond_RestrictToMelee condition when player leaves zone
+								TF2_RemoveCondition(activator, TFCond:TFCond_RestrictToMelee);
+							}
+							else
+							{
+								// Allow other weapons usage in other games using SDKHooks
+								WeaponPunishment[activator] = false;
+							}
 							if (messages) PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
 						}
 					}
@@ -823,7 +854,7 @@ public Action:Command_VoiceMenu(client, const String:command[], args)
 	if (StrEqual(buffer, "0 0", false))
 	{
 		// Does player got access to edit zones and currently editing a zone?
-		if (ZonePoint[client] != NO_POINT /* && CheckCommandAccess(client, "sm_zones_immunity", ADMFLAG_CONFIG, true) */)
+		if (ZonePoint[client] != NO_POINT /*&& CheckCommandAccess(client, "sm_zones_immunity", ADMFLAG_CONFIG, true)*/)
 		{
 			// Yea, retrieve his origin
 			decl Float:origin[3];
@@ -1416,7 +1447,6 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 				// Switch through the zones_punishments
 				new real_punishment = GetArrayCell(hZone, ZONE_PUNISHMENT) + 1;
 
-				//real_punishment++;
 				if (real_punishment > CUSTOM)
 				{
 					// Re-init punishments on overbounds
