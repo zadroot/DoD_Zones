@@ -14,7 +14,7 @@ public OnClientPutInServer(client)
 	InCustomZone[client] = false;
 }
 
-public Action:OnEnteredProtectedZone(client, const String:prefix)
+public Action:OnEnteredProtectedZone(client, const String:prefix[])
 {
 	if (1 <= client <= MaxClients)
 	{
@@ -23,7 +23,7 @@ public Action:OnEnteredProtectedZone(client, const String:prefix)
 	}
 }
 
-public Action:OnLeftProtectedZone(client, const String:prefix)
+public Action:OnLeftProtectedZone(client, const String:prefix[])
 {
 	if (1 <= client <= MaxClients)
 	{
