@@ -14,7 +14,7 @@ public Action:OnEnteredProtectedZone(client, const String:prefix[])
 
 	if (1 <= client <= MaxClients)
 	{
-		if (GetConVarBool(ShowZones)
+		if (GetConVarBool(ShowZones))
 		{
 			PrintToChat(client, "%sYou have entered custom zone.", prefix);
 		}
@@ -29,7 +29,7 @@ public Action:OnLeftProtectedZone(client, const String:prefix[])
 	if (1 <= client <= MaxClients)
 	{
 		// It's also called whenever player dies within a zone, so dont show a message if player died there
-		if (GetConVarBool(ShowZones) && IsPlayerAlive(cleint))
+		if (GetConVarBool(ShowZones) && IsPlayerAlive(client))
 		{
 			PrintToChat(client, "%sYou have left custom zone.", prefix);
 		}
