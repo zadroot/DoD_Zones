@@ -330,7 +330,7 @@ public OnMapStart()
 	ParseZoneConfig();
 
 	// Create global repeatable timer to show zones
-	CreateTimer(LIFETIME_INTERVAL, Timer_ShowZones, _, TIMER_FLAG_NO_MAPCHANGE|TIMER_REPEAT);
+	CreateTimer(LIFETIME_INTERVAL, Timer_ShowZones, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 
 	// Plugin were late loaded
 	if (bLate)
@@ -632,6 +632,20 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 					{
 						if (StartTouch)
 						{
+							// Manually change player's weapon to melee
+							new weapon = GetPlayerWeaponSlot(activator, TFWeaponSlot_Melee);
+							if (IsValidEntity(weapon))
+							{
+								decl String:class[MAX_NAME_LENGTH * 2]; // long
+								GetEdictClassname(weapon, class, sizeof(class));
+
+								// Smoothly set player weapon to melee
+								FakeClientCommand(activator, "use %s", class);
+
+								// If its wont work, force to change it over netprops
+								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
+							}
+
 							if (IsTF2)
 							{
 								// For TF2 set existed condition to dont allow player to go away from melee weapon
@@ -639,21 +653,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							}
 							else
 							{
-								// Manually change player's weapon to melee
-								new weapon = GetPlayerWeaponSlot(activator, TFWeaponSlot_Melee);
-								if (IsValidEntity(weapon))
-								{
-									decl String:class[MAX_NAME_LENGTH];
-									GetEdictClassname(weapon, class, sizeof(class));
-
-									// Smoothly set player weapon to current melee
-									FakeClientCommand(activator, "use %s", class);
-
-									// If its wont work, force to change it over network
-									SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
-								}
-
-								// Set boolean for weapon usage
+								// Set boolean for weapon usage in other games
 								WeaponPunishment[activator] = true;
 							}
 							if (messages) PrintToChat(activator, "%s%t", PREFIX, "Can use melee only");
@@ -662,12 +662,12 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						{
 							if (IsTF2)
 							{
-								// Remove TFCond_RestrictToMelee condition when player leaves zone
+								// Remove TFCond_RestrictToMelee condition when leaving a zone
 								TF2_RemoveCondition(activator, TFCond:TFCond_RestrictToMelee);
 							}
 							else
 							{
-								// Allow other weapons usage in other games using SDKHooks
+								// Allow weapons usage in other games using SDKHooks
 								WeaponPunishment[activator] = false;
 							}
 							if (messages) PrintToChat(activator, "%s%t", PREFIX, "Can use any weapon");
@@ -853,7 +853,7 @@ public Action:Command_VoiceMenu(client, const String:command[], args)
 	// Check whether medic command is used
 	if (StrEqual(buffer, "0 0", false))
 	{
-		// Does player got access to edit zones and currently editing a zone?
+		// Does player got access to edit zones and currently editing a zone ?
 		if (ZonePoint[client] != NO_POINT /*&& CheckCommandAccess(client, "sm_zones_immunity", ADMFLAG_CONFIG, true)*/)
 		{
 			// Yea, retrieve his origin
