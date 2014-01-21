@@ -169,9 +169,9 @@ public OnPluginStart()
 	HookEventEx("round_start", OnRoundStart, EventHookMode_PostNoCopy); // Doesnt exists in TF2
 
 	// Find datamap offsets that required for this plugin
-	m_hMyWeapons            = GetSendPropOffset("CBasePlayer",       "m_hMyWeapons");
-	m_flNextPrimaryAttack   = GetSendPropOffset("CBaseCombatWeapon", "m_flNextPrimaryAttack");
-	m_flNextSecondaryAttack = GetSendPropOffset("CBaseCombatWeapon", "m_flNextSecondaryAttack");
+	m_hMyWeapons            = FindSendPropOffsEx("CBasePlayer",       "m_hMyWeapons");
+	m_flNextPrimaryAttack   = FindSendPropOffsEx("CBaseCombatWeapon", "m_flNextPrimaryAttack");
+	m_flNextSecondaryAttack = FindSendPropOffsEx("CBaseCombatWeapon", "m_flNextSecondaryAttack");
 
 	// Default MAX_WEAPONS value for most games
 	MAX_WEAPONS = 48;
@@ -298,7 +298,7 @@ public OnMapStart()
 		// If yes - skip the first 19 characters to avoid comparing the "workshop/12345678" prefix
 		strcopy(map, sizeof(map), curmap[19]);
 	}
-	else /*That's not a workshop map*/
+	else /* Not a workshop map */
 	{
 		strcopy(map, sizeof(map), curmap);
 	}
@@ -2478,11 +2478,11 @@ TE_SendBeamBoxToClient(client, const Float:upc[3], const Float:btc[3], ModelInde
 	TE_SendToClient(client);
 }
 
-/* GetSendPropOffset()
+/* FindSendPropOffsEx()
  *
  * Returns the offset of the specified network property.
  * --------------------------------------------------------------------------- */
-GetSendPropOffset(const String:serverClass[64], const String:propName[64])
+FindSendPropOffsEx(const String:serverClass[64], const String:propName[64])
 {
 	new offset = FindSendPropOffs(serverClass, propName);
 
