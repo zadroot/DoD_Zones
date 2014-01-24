@@ -126,7 +126,6 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 
 	// Mark GetEngineVersion as optional native due to older SM versions and GetEngineVersionCompat() stock
 	MarkNativeAsOptional("GetEngineVersion");
-	return APLRes_Success;
 }
 
 /**
@@ -570,7 +569,8 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							// Notify player about not allowing to enter there by default phrase from resources
 							if (version == Engine_DODS) PrintHintText(activator, "#Dod_wrong_way");
 						}
-						else SetEntProp(caller, Prop_Send, "m_CollisionGroup", 11); // Otherwise return collision group
+						else // Otherwise return proper value for collision group
+							SetEntProp(caller, Prop_Send, "m_CollisionGroup", 11);
 					}
 					case SLAY:
 					{
