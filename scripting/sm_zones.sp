@@ -123,9 +123,6 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
 	// late-loading support for plugin
 	bLate = late;
-
-	// Mark GetEngineVersion as optional native due to older SM versions and GetEngineVersionCompat() stock
-	MarkNativeAsOptional("GetEngineVersion");
 }
 
 /**
@@ -145,6 +142,11 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
  * -------------------------------------------------------------------------- */
 public OnPluginStart()
 {
+	// Find required send property offsets for the plugin
+	m_hMyWeapons            = FindSendPropOffsEx("CBasePlayer",       "m_hMyWeapons");
+	m_flNextPrimaryAttack   = FindSendPropOffsEx("CBaseCombatWeapon", "m_flNextPrimaryAttack");
+	m_flNextSecondaryAttack = FindSendPropOffsEx("CBaseCombatWeapon", "m_flNextSecondaryAttack");
+
 	// Create plugin ConVars
 	CreateConVar("dod_zones_version", PLUGIN_VERSION, PLUGIN_NAME, FCVAR_NOTIFY|FCVAR_DONTRECORD);
 
@@ -165,12 +167,7 @@ public OnPluginStart()
 	// Hook plugin events
 	HookEvent("player_spawn",  OnPlayerEvents);
 	HookEvent("player_death",  OnPlayerEvents);
-	HookEventEx("round_start", OnRoundStart, EventHookMode_PostNoCopy); // Doesnt exists in TF2
-
-	// Find datamap offsets that required for this plugin
-	m_hMyWeapons            = FindSendPropOffsEx("CBasePlayer",       "m_hMyWeapons");
-	m_flNextPrimaryAttack   = FindSendPropOffsEx("CBaseCombatWeapon", "m_flNextPrimaryAttack");
-	m_flNextSecondaryAttack = FindSendPropOffsEx("CBaseCombatWeapon", "m_flNextSecondaryAttack");
+	HookEventEx("round_start", OnRoundStart, EventHookMode_PostNoCopy); // Doesnt exists in TF2, but HookEventEx wont give an error
 
 	// Default MAX_WEAPONS value for most games
 	MAX_WEAPONS = 48;
@@ -180,8 +177,8 @@ public OnPluginStart()
 	TeamColors[CS_TEAM_T]    = { 255, 0,   0,   255 }; // Red
 	TeamColors[CS_TEAM_CT]   = { 0,   0, 255,   255 }; // Blue
 
-	new EngineVersion:version = GetEngineVersionCompat();
-	switch (version)
+	// OnClientSayCommand forward exists in SM 1.5+ as well as GetEngineVersion() native
+	switch (EngineVersion:GetEngineVersion())
 	{
 		case Engine_CSS:
 		{
@@ -297,14 +294,14 @@ public OnMapStart()
 		// If yes - skip the first 19 characters to avoid comparing the "workshop/12345678" prefix
 		strcopy(map, sizeof(map), curmap[19]);
 	}
-	else /* Not a workshop map */
+	else
 	{
+		// Not a workshop map
 		strcopy(map, sizeof(map), curmap);
 	}
 
 	// Setup tempent effects for zones
-	new EngineVersion:version = GetEngineVersionCompat();
-	switch (version)
+	switch (EngineVersion:GetEngineVersion())
 	{
 		case Engine_Left4Dead, Engine_Left4Dead2, Engine_AlienSwarm, Engine_CSGO:
 		{
@@ -340,7 +337,7 @@ public OnMapStart()
 			// OnMapStart() is called after plugin reloads, so now we should
 			if (IsClientInGame(client))
 			{
-				// enable hooks
+				// Hook 'em
 				OnClientPutInServer(client);
 			}
 		}
@@ -377,7 +374,7 @@ public OnClientPutInServer(client)
  * -------------------------------------------------------------------------- */
 public Action:OnPlayerRunCmd(client, &buttons)
 {
-	// Use this intead of global boolean
+	// Use this intead of a global
 	static bool:PressedUse[MAXPLAYERS + 1] = false;
 
 	// Make sure player is pressing +USE button
@@ -389,10 +386,10 @@ public Action:OnPlayerRunCmd(client, &buttons)
 			decl Float:origin[3];
 			GetClientAbsOrigin(client, origin);
 
-			// Player is creating a zone
+			// Player is creating first corner
 			if (ZonePoint[client] == FIRST_POINT)
 			{
-				// Set point to second on first pressing
+				// Set point for second one
 				ZonePoint[client] = SECOND_POINT;
 				FirstZoneVector[client][0] = origin[0];
 				FirstZoneVector[client][1] = origin[1];
@@ -408,16 +405,17 @@ public Action:OnPlayerRunCmd(client, &buttons)
 				SecondZoneVector[client][1] = origin[1];
 				SecondZoneVector[client][2] = origin[2];
 
-				// Notify client and set name boolean to 'true' to hook say/say_team commands in a future usage
+				// Notify client and set name boolean to 'true' to hook player chat for naming zone
 				PrintToChat(client, "%s%t", PREFIX, "Type Zone Name");
 				NamesZone[client] = true;
 			}
 		}
 
-		// Cooldown
+		// Sort of cooldown
 		PressedUse[client] = true;
 	}
 
+	// Player not IN_USE
 	else PressedUse[client] = false;
 }
 
@@ -497,7 +495,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				new team = CS_TEAM_NONE;
 				new punishment = INIT;
 				new real_punishment = GetConVarInt(zones_punishment);
-				new EngineVersion:version = GetEngineVersionCompat();
+				new EngineVersion:version = GetEngineVersion();
 
 				// Check whether or not that was StartTouch callback. Check if player is alive there as well
 				new bool:StartTouch = (StrEqual(output, "OnStartTouch", false) && IsPlayerAlive(activator));
@@ -609,19 +607,19 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						new weapons = -1, Float:time = GetGameTime();
 						for (i = 0; i < MAX_WEAPONS; i++)
 						{
-							// Retrieve the all weapons of a player
+							// Retrieve all player weapons
 							if ((weapons = GetEntDataEnt2(activator, m_hMyWeapons + (i * 4))) != -1)
 							{
-								// I check for 'is player alive' because of 'no shoot' punishment
+								// Checking for 'alive player' is also required
 								if (StartTouch)
 								{
-									// Then dont allow player to shoot by those weapons
+									// Set very very big (an unlimited) cooldown for weapons to prevent shooting
 									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   time + 999.9);
-									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time + 999.9);
+									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time + 999.0);
 								}
 								else // If player dies in that zone, he will not able to shoot on respawn, so checking for alive player does the trick
 								{
-									// Otherwise if player left a zone - allow shooting
+									// Setup default timestamp to allow shooting by weapons
 									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   time);
 									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time);
 								}
@@ -636,13 +634,13 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							new weapon = GetPlayerWeaponSlot(activator, TFWeaponSlot_Melee);
 							if (IsValidEntity(weapon))
 							{
-								decl String:class[MAX_NAME_LENGTH * 2]; // long
+								decl String:class[MAX_NAME_LENGTH * 2]; // * 2
 								GetEdictClassname(weapon, class, sizeof(class));
 
 								// Smoothly set player weapon to melee
 								FakeClientCommand(activator, "use %s", class);
 
-								// If its wont work, force to change it over netprops
+								// If its wont work, force to change it over network
 								SetEntPropEnt(activator, Prop_Data, "m_hActiveWeapon", weapon);
 							}
 
@@ -680,6 +678,9 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 
 						// Add activator id to the forward
 						Call_PushCell(activator);
+
+						// Add zone name to forward, might be useful in a future usage
+						Call_PushString(targetname[8]);
 
 						// Add zones prefix for this forward, so plugins can print messages with proper prefix
 						Call_PushString(PREFIX);
@@ -1298,13 +1299,13 @@ ShowZoneOptionsMenu(client)
 		switch (GetArrayCell(hZone, ZONE_PUNISHMENT))
 		{
 			// No individual zones_punishment selected. Using default one (which is defined in ConVar)
-			case INIT:     Format(buffer, sizeof(buffer), "%T", "Default",           client);
 			case ANNOUNCE: Format(buffer, sizeof(buffer), "%T", "Print Message",     client);
 			case BOUNCE:   Format(buffer, sizeof(buffer), "%T", "Bounce Back",       client);
 			case SLAY:     Format(buffer, sizeof(buffer), "%T", "Slay player",       client);
 			case NOSHOOT:  Format(buffer, sizeof(buffer), "%T", "No shooting",       client);
 			case MELEE:    Format(buffer, sizeof(buffer), "%T", "Only Melee",        client);
 			case CUSTOM:   Format(buffer, sizeof(buffer), "%T", "Custom Punishment", client);
+			default:       Format(buffer, sizeof(buffer), "%T", "Default",           client);
 		}
 
 		// Update punishment info
@@ -1353,7 +1354,7 @@ public Menu_ZoneOptions(Handle:menu, MenuAction:action, client, param)
 			{
 				decl Float:origin[3];
 				GetMiddleOfABox(vec1, vec2, origin);
-				TeleportEntity(client, origin, NULL_VECTOR, Float:{ 0.0, 0.0, 0.0 });
+				TeleportEntity(client, origin, NULL_VECTOR, Float:{0.0, 0.0, 0.0});
 
 				// Redisplay the menu
 				ShowZoneOptionsMenu(client);
@@ -1653,9 +1654,12 @@ public Menu_ZoneVectorEdit(Handle:menu, MenuAction:action, client, param)
 	{
 		case MenuAction_Select:
 		{
-			// Fix for 'array index is out of bounds'
-			decl String:info[5], team; team = CS_TEAM_NONE;
+			// Get the menu item
+			decl String:info[5];
 			GetMenuItem(menu, param, info, sizeof(info));
+
+			// Fix for 'array index is out of bounds'
+			new team = CS_TEAM_NONE;
 
 			// Save the new coordinates to the file and the array
 			if (StrEqual(info, "save", false))
@@ -2493,108 +2497,4 @@ FindSendPropOffsEx(const String:serverClass[64], const String:propName[64])
 	}
 
 	return offset;
-}
-
-stock EngineVersion:GetEngineVersionCompat()
-{
-	new EngineVersion:version;
-	if (GetFeatureStatus(FeatureType_Native, "GetEngineVersion") != FeatureStatus_Available)
-	{
-		new sdkVersion = GuessSDKVersion();
-		switch (sdkVersion)
-		{
-			case SOURCE_SDK_ORIGINAL:
-			{
-				version = Engine_Original;
-			}
-
-			case SOURCE_SDK_DARKMESSIAH:
-			{
-				version = Engine_DarkMessiah;
-			}
-
-			case SOURCE_SDK_EPISODE1:
-			{
-				version = Engine_SourceSDK2006;
-			}
-
-			case SOURCE_SDK_EPISODE2:
-			{
-				version = Engine_SourceSDK2007;
-			}
-
-			case SOURCE_SDK_BLOODYGOODTIME:
-			{
-				version = Engine_BloodyGoodTime;
-			}
-
-			case SOURCE_SDK_EYE:
-			{
-				version = Engine_EYE;
-			}
-
-			case SOURCE_SDK_CSS:
-			{
-				version = Engine_CSS;
-			}
-
-			case SOURCE_SDK_EPISODE2VALVE:
-			{
-				decl String:gameFolder[PLATFORM_MAX_PATH];
-				GetGameFolderName(gameFolder, PLATFORM_MAX_PATH);
-				if (StrEqual(gameFolder, "dod", false))
-				{
-					version = Engine_DODS;
-				}
-				else if (StrEqual(gameFolder, "hl2mp", false))
-				{
-					version = Engine_HL2DM;
-				}
-				else
-				{
-					version = Engine_TF2;
-				}
-			}
-
-			case SOURCE_SDK_LEFT4DEAD:
-			{
-				version = Engine_Left4Dead;
-			}
-
-			case SOURCE_SDK_LEFT4DEAD2:
-			{
-				decl String:gameFolder[PLATFORM_MAX_PATH];
-				GetGameFolderName(gameFolder, PLATFORM_MAX_PATH);
-				if (StrEqual(gameFolder, "nucleardawn", false))
-				{
-					version = Engine_NuclearDawn;
-				}
-				else
-				{
-					version = Engine_Left4Dead2;
-				}
-			}
-
-			case SOURCE_SDK_ALIENSWARM:
-			{
-				version = Engine_AlienSwarm;
-			}
-
-			case SOURCE_SDK_CSGO:
-			{
-				version = Engine_CSGO;
-			}
-
-			default:
-			{
-				version = Engine_Unknown;
-			}
-		}
-	}
-	else
-	{
-		version = GetEngineVersion();
-	}
-
-	return version;
 }

@@ -7,7 +7,7 @@ public Plugin:myinfo =
 	url         = "http://www.dodsplugins.com/"
 }
 
-public Action:OnEnteredProtectedZone(client, const String:prefix[])
+public Action:OnEnteredProtectedZone(client, const String:name[], const String:prefix[])
 {
 	static Handle:ShowZones   = INVALID_HANDLE;
 	if (!ShowZones) ShowZones = FindConVar("sm_zones_show_messages");
@@ -16,12 +16,12 @@ public Action:OnEnteredProtectedZone(client, const String:prefix[])
 	{
 		if (GetConVarBool(ShowZones))
 		{
-			PrintToChat(client, "%sYou have entered custom zone.", prefix);
+			PrintToChat(client, "%sYou have entered \"%s\" zone.", prefix, name);
 		}
 	}
 }
 
-public Action:OnLeftProtectedZone(client, const String:prefix[])
+public Action:OnLeftProtectedZone(client, const String:name[], const String:prefix[])
 {
 	static Handle:ShowZones   = INVALID_HANDLE;
 	if (!ShowZones) ShowZones = FindConVar("sm_zones_show_messages");
@@ -31,7 +31,7 @@ public Action:OnLeftProtectedZone(client, const String:prefix[])
 		// It's also called whenever player dies within a zone, so dont show a message if player died there
 		if (GetConVarBool(ShowZones) && IsPlayerAlive(client))
 		{
-			PrintToChat(client, "%sYou have left custom zone.", prefix);
+			PrintToChat(client, "%sYou have left \"%s\" zone.", prefix, name);
 		}
 	}
 }
