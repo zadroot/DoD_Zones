@@ -234,8 +234,8 @@ public OnPluginStart()
 	ZonesArray = CreateArray();
 
 	// Global forwards for custom punishment
-	OnEnteredProtectedZone = CreateGlobalForward("OnEnteredProtectedZone", ET_Event, Param_Cell, Param_String);
-	OnLeftProtectedZone    = CreateGlobalForward("OnLeftProtectedZone",    ET_Event, Param_Cell, Param_String);
+	OnEnteredProtectedZone = CreateGlobalForward("OnEnteredProtectedZone", ET_Event, Param_Cell, Param_Cell, Param_String);
+	OnLeftProtectedZone    = CreateGlobalForward("OnLeftProtectedZone",    ET_Event, Param_Cell, Param_Cell, Param_String);
 
 	// And create/load plugin's config
 	AutoExecConfig(true, "sm_zones");
@@ -676,13 +676,13 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						// Start appropriate OnEntered/Left zone forwards in custom punishment to deal with other plugins
 						Call_StartForward(StartTouch ? OnEnteredProtectedZone : OnLeftProtectedZone);
 
-						// Add activator id to the forward
+						// Add zone (caller) entity index
+						Call_PushCell(caller);
+
+						// Add the client id when its passing a zone
 						Call_PushCell(activator);
 
-						// Add zone name to forward, might be useful in a future usage
-						Call_PushString(targetname[8]);
-
-						// Add zones prefix for this forward, so plugins can print messages with proper prefix
+						// Add zones prefix for this forward too, so plugins can print messages with proper prefix
 						Call_PushString(PREFIX);
 
 						// And finally call the forward
