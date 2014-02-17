@@ -26,7 +26,7 @@
 #define MAX_ZONE_LENGTH   64
 #define LIFETIME_INTERVAL 5.0
 
-enum
+enum // Just makes plugin readable
 {
 	NO_POINT,
 	FIRST_POINT,
@@ -89,7 +89,6 @@ new	EditingZone[MAXPLAYERS + 1]           = { INIT,     ... },
 
 // ====[ GLOBALS ]===========================================================
 new	bool:bLate,
-	bool:IsTF2,
 	m_hMyWeapons,
 	m_flNextPrimaryAttack,
 	m_flNextSecondaryAttack,
@@ -101,6 +100,7 @@ new	bool:bLate,
 	String:PREFIX[32],
 	TeamZones[TEAM_SIZE],
 	TeamColors[TEAM_SIZE][4],
+	EngineVersion:CurrentVersion,
 	Handle:OnEnteredProtectedZone,
 	Handle:OnLeftProtectedZone;
 
@@ -177,8 +177,9 @@ public OnPluginStart()
 	TeamColors[CS_TEAM_T]    = { 255, 0,   0,   255 }; // Red
 	TeamColors[CS_TEAM_CT]   = { 0,   0, 255,   255 }; // Blue
 
-	// OnClientSayCommand forward exists in SM 1.5+ as well as GetEngineVersion() native
-	switch (EngineVersion:GetEngineVersion())
+	// OnClientSayCommand() forward exists in SM 1.5+ as well as GetEngineVersion() native
+	CurrentVersion = GetEngineVersion();
+	switch (CurrentVersion)
 	{
 		case Engine_CSS:
 		{
@@ -197,7 +198,6 @@ public OnPluginStart()
 		case Engine_TF2:
 		{
 			// Set boolean for optimizations purpose
-			IsTF2  = true;
 			PREFIX = "\x01[\x04TF2 Zones\x01] >> \x07FFFF00";
 
 			// In TF2 hook voicemenu command to check whether or not 'medic' command was used
@@ -244,10 +244,10 @@ public OnPluginStart()
 	decl String:path[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, path, sizeof(path), "data/zones");
 
-	// If there are no 'zones' folder, create it
+	// If there are no 'zones' folder - create it
 	if (!DirExists(path))
 	{
-		// After creating a directory, set those permissions to allow plugin to create/load/edit configs from this directory
+		// After creating a zones folder set its permissions to allow plugin to create/load/edit configs from this directory
 		CreateDirectory(path, FPERM_U_READ|FPERM_U_WRITE|FPERM_U_EXEC|FPERM_G_READ|FPERM_G_EXEC|FPERM_O_READ|FPERM_O_EXEC);
 	}
 }
@@ -289,7 +289,7 @@ public OnMapStart()
 	GetCurrentMap(curmap, sizeof(curmap));
 
 	// Does current map string is contains a "workshop" word?
-	if (StrContains(curmap, "workshop", false) != -1)
+	if (strncmp(curmap, "workshop", 8) == 0)
 	{
 		// If yes - skip the first 19 characters to avoid comparing the "workshop/12345678" prefix
 		strcopy(map, sizeof(map), curmap[19]);
@@ -301,7 +301,7 @@ public OnMapStart()
 	}
 
 	// Setup tempent effects for zones
-	switch (EngineVersion:GetEngineVersion())
+	switch (CurrentVersion)
 	{
 		case Engine_Left4Dead, Engine_Left4Dead2, Engine_AlienSwarm, Engine_CSGO:
 		{
@@ -350,8 +350,8 @@ public OnMapStart()
  * -------------------------------------------------------------------------- */
 public OnClientPutInServer(client)
 {
-	// Ignore hooks in TF2
-	if (!IsTF2)
+	// Dont make weapon hooks for TF2
+	if (CurrentVersion != Engine_TF2)
 	{
 		// Optionally hook some weapon forwards for weapon punishments
 		SDKHook(client, SDKHook_WeaponSwitch, OnWeaponUsage);
@@ -437,7 +437,7 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 			// Kill all previous zones
 			if (IsValidEntity(zone)
 			&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-			&& StrContains(class, "sm_zone") != -1)
+			&& strncmp(class, "sm_zone", 7) == 0) // Compare first 7 characters
 			{
 				AcceptEntityInput(zone, "Kill");
 			}
@@ -495,10 +495,10 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 				new team = CS_TEAM_NONE;
 				new punishment = INIT;
 				new real_punishment = GetConVarInt(zones_punishment);
-				new EngineVersion:version = GetEngineVersion();
 
 				// Check whether or not that was StartTouch callback. Check if player is alive there as well
 				new bool:StartTouch = (StrEqual(output, "OnStartTouch", false) && IsPlayerAlive(activator));
+				new bool:IsTF2      = (CurrentVersion == Engine_TF2);
 				new bool:messages   = GetConVarBool(show_messages);
 
 				// Loop through all available zones
@@ -565,7 +565,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 							SetEntProp(caller, Prop_Send, "m_CollisionGroup", team == CS_TEAM_NONE || team == GetClientTeam(activator) ? 17 : 11);
 
 							// Notify player about not allowing to enter there by default phrase from resources
-							if (version == Engine_DODS) PrintHintText(activator, "#Dod_wrong_way");
+							if (CurrentVersion == Engine_DODS) PrintHintText(activator, "#Dod_wrong_way");
 						}
 						else // Otherwise return proper value for collision group
 							SetEntProp(caller, Prop_Send, "m_CollisionGroup", 11);
@@ -577,7 +577,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						{
 							// Oh and check whether or not show that zone
 							if (messages) PrintToChatAll("%s%t", PREFIX, "Player Slayed", activator, targetname[8]);
-							if (version == Engine_DODS)
+							if (CurrentVersion == Engine_DODS)
 							{
 								// Kill player using this native, because sometimes players wont die in DoD:S
 								SDKHooks_TakeDamage(activator, 0, 0, float(GetClientHealth(activator)));
@@ -605,17 +605,17 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						}
 
 						new weapons = -1, Float:time = GetGameTime();
-						for (i = 0; i < MAX_WEAPONS; i++)
+						for (i = 0; i < MAX_WEAPONS; i += 4)
 						{
 							// Retrieve all player weapons
-							if ((weapons = GetEntDataEnt2(activator, m_hMyWeapons + (i * 4))) != -1)
+							if ((weapons = GetEntDataEnt2(activator, m_hMyWeapons + i)) != -1)
 							{
 								// Checking for 'alive player' is also required
 								if (StartTouch)
 								{
 									// Set very very big (an unlimited) cooldown for weapons to prevent shooting
 									SetEntDataFloat(weapons, m_flNextPrimaryAttack,   time + 999.9);
-									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time + 999.0);
+									SetEntDataFloat(weapons, m_flNextSecondaryAttack, time + 999.9);
 								}
 								else // If player dies in that zone, he will not able to shoot on respawn, so checking for alive player does the trick
 								{
@@ -1148,7 +1148,7 @@ ShowActivatedZonesMenu(client)
 	{
 		if (IsValidEntity(zone) && !GetEntProp(zone, Prop_Data, "m_bDisabled") // Dont add diactivated zones
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrContains(class, "sm_zone") != -1)
+		&& strncmp(class, "sm_zone", 7) == 0)
 		{
 			// Set menu title and item info same as m_iName without sm_zone prefix
 			AddMenuItem(menu, class[8], class[8]);
@@ -1205,7 +1205,7 @@ ShowDiactivatedZonesMenu(client)
 		// If we found a zone, make sure its diactivated
 		if (IsValidEntity(zone) && GetEntProp(zone, Prop_Data, "m_bDisabled")
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
-		&& StrContains(class, "sm_zone") != -1) // Does name contains 'sm_zone' prefix?
+		&& strncmp(class, "sm_zone", 7) == 0) // Does name contains 'sm_zone' prefix?
 		{
 			// Add every disabled zone into diactivated menu
 			AddMenuItem(menu, class[8], class[8]);
