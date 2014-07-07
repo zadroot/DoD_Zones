@@ -4,21 +4,21 @@
 * Description:
 *   Defines map zones where players are not allowed to enter (with different punishments).
 *
-* Version 1.0
+* Version 1.1
 * Changelog & more info at http://goo.gl/4nKhJ
 */
 
 // ====[ INCLUDES ]==========================================================
-#include <sdkhooks>
 #undef REQUIRE_EXTENSIONS
 #include <cstrike>
+#include <sdkhooks>
 #include <tf2_stocks>
 #undef REQUIRE_PLUGIN
 #include <adminmenu>
 
 // ====[ CONSTANTS ]=========================================================
 #define PLUGIN_NAME       "SM Zones"
-#define PLUGIN_VERSION    "1.0"
+#define PLUGIN_VERSION    "1.1"
 
 #define ZONES_MODEL       "models/error.mdl" // This model exists in any source game
 #define INIT              -1
@@ -111,7 +111,7 @@ public Plugin:myinfo =
 	author      = "Root (based on \"Anti Rush\" plugin by Jannik 'Peace-Maker' Hartung)",
 	description = "Defines map zones where players are not allowed to enter (with different punishments)",
 	version     = PLUGIN_VERSION,
-	url         = "http://www.dodsplugins.com/, http://www.wcfan.de/"
+	url         = "http://www.dodsplugins.com/, http://www.wcfan.de/",
 }
 
 
@@ -181,10 +181,6 @@ public OnPluginStart()
 	CurrentVersion = GetEngineVersion();
 	switch (CurrentVersion)
 	{
-		case Engine_CSS:
-		{
-			PREFIX = "\x01[\x04CS:S Zones\x01] >> \x07FFFF00";
-		}
 		case Engine_DODS:
 		{
 			PREFIX = "\x01[\x04DoD:S Zones\x01] >> \x07FFFF00";
@@ -211,6 +207,12 @@ public OnPluginStart()
 			MAX_WEAPONS = 64; // CS:GO got 64 weapons max
 			PREFIX = "\x01[\x04CS:GO Zones\x01] >> \x03";
 		}
+		case Engine_Insurgency:
+		{
+			// +USE command is not bound in Insurgency
+			AddCommandListener(Command_Leaning, "+leanright");
+			PREFIX = "\x01[\x04INS Zones\x01] >> \x03";
+		}
 		default:
 		{
 			// Use default prefix for other games
@@ -234,8 +236,8 @@ public OnPluginStart()
 	ZonesArray = CreateArray();
 
 	// Global forwards for custom punishment
-	OnEnteredProtectedZone = CreateGlobalForward("OnEnteredProtectedZone", ET_Event, Param_Cell, Param_Cell, Param_String);
-	OnLeftProtectedZone    = CreateGlobalForward("OnLeftProtectedZone",    ET_Event, Param_Cell, Param_Cell, Param_String);
+	OnEnteredProtectedZone = CreateGlobalForward("OnEnteredProtectedZone", ET_Ignore, Param_Cell, Param_Cell, Param_String);
+	OnLeftProtectedZone    = CreateGlobalForward("OnLeftProtectedZone",    ET_Ignore, Param_Cell, Param_Cell, Param_String);
 
 	// And create/load plugin's config
 	AutoExecConfig(true, "sm_zones");
@@ -284,6 +286,56 @@ public OnAdminMenuReady(Handle:topmenu)
  * -------------------------------------------------------------------------- */
 public OnMapStart()
 {
+	// Copied from funcommands.sp
+	new Handle:gameConfig = LoadGameConfigFile("funcommands.games");
+	if (gameConfig != INVALID_HANDLE)
+	{
+		new String:buffer[PLATFORM_MAX_PATH];
+		if (GameConfGetKeyValue(gameConfig, "SpriteBeam", buffer, sizeof(buffer)) && buffer[0])
+		{
+			// Use SpriteBeam material from gamedata config to use
+			LaserMaterial = PrecacheModel(buffer);
+		}
+		else LogMessage("\"SpriteBeam\" material for this game is missing! Ask SourceMod developers to add one in funcommands gamedata.");
+
+		if (GameConfGetKeyValue(gameConfig, "SpriteHalo", buffer, sizeof(buffer)) && buffer[0])
+		{
+			// Get SpriteHalo material to use
+			HaloMaterial = PrecacheModel(buffer);
+		}
+		else LogMessage("\"SpriteHalo\" material for this game is missing! Ask SourceMod developers to add one in funcommands gamedata.");
+
+		if (GameConfGetKeyValue(gameConfig, "SpriteGlow", buffer, sizeof(buffer)) && buffer[0])
+		{
+			GlowSprite = PrecacheModel(buffer);
+		}
+		// If GlowSprite is missing for this game, log about
+		else LogMessage("\"GlowSprite\" material for this game is missing! Ask SourceMod developers to add one in funcommands gamedata.");
+
+		CloseHandle(gameConfig);
+	}
+	else // Funcommands gamedata could not be loaded
+	{
+		// Load required materials manually
+		switch (CurrentVersion)
+		{
+			case Engine_Left4Dead, Engine_Left4Dead2, Engine_AlienSwarm, Engine_CSGO, Engine_SDK2013, Engine_Insurgency, Engine_Contagion:
+			{
+				// Paths for materials are different for some engines
+				LaserMaterial = PrecacheModel("materials/sprites/laserbeam.vmt");
+				HaloMaterial  = PrecacheModel("materials/sprites/glow01.vmt");
+				GlowSprite    = PrecacheModel("materials/sprites/blueflare1.vmt"); // Well actually there are no 'glow sprite' for Insurgency
+			}
+			default:
+			{
+				// Generic effects are used in OB engine and earlier (?)
+				LaserMaterial = PrecacheModel("materials/sprites/laser.vmt");
+				HaloMaterial  = PrecacheModel("materials/sprites/halo01.vmt");
+				GlowSprite    = PrecacheModel("sprites/blueglow2.vmt");
+			}
+		}
+	}
+
 	// Get the current map
 	decl String:curmap[64];
 	GetCurrentMap(curmap, sizeof(curmap));
@@ -300,25 +352,6 @@ public OnMapStart()
 		strcopy(map, sizeof(map), curmap);
 	}
 
-	// Setup tempent effects for zones
-	switch (CurrentVersion)
-	{
-		case Engine_Left4Dead, Engine_Left4Dead2, Engine_AlienSwarm, Engine_CSGO:
-		{
-			// Paths for materials are different on some engines
-			LaserMaterial = PrecacheModel("materials/sprites/laserbeam.vmt");
-			HaloMaterial  = PrecacheModel("materials/sprites/glow01.vmt");
-			GlowSprite    = PrecacheModel("materials/sprites/blueflare1.vmt");
-		}
-		default:
-		{
-			// Generic effects are used in OB engine and earlier (?)
-			LaserMaterial = PrecacheModel("materials/sprites/laser.vmt");
-			HaloMaterial  = PrecacheModel("materials/sprites/halo01.vmt");
-			GlowSprite    = PrecacheModel("sprites/blueglow2.vmt");
-		}
-	}
-
 	// Precache zones model
 	PrecacheModel(ZONES_MODEL, true);
 
@@ -331,6 +364,9 @@ public OnMapStart()
 	// Plugin were late loaded
 	if (bLate)
 	{
+		// Fire RoundStart event to spawn zones on a map
+		OnRoundStart(INVALID_HANDLE, NULL_STRING, false);
+
 		// Yea, so loop through all clients on a server
 		for (new client = 1; client <= MaxClients; client++)
 		{
@@ -435,7 +471,7 @@ public OnRoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 		while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 		{
 			// Kill all previous zones
-			if (IsValidEntity(zone)
+			if (IsValidEdict(zone)
 			&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
 			&& strncmp(class, "sm_zone", 7) == 0) // Compare first 7 characters
 			{
@@ -632,7 +668,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 						{
 							// Manually change player's weapon to melee
 							new weapon = GetPlayerWeaponSlot(activator, TFWeaponSlot_Melee);
-							if (IsValidEntity(weapon))
+							if (IsValidEdict(weapon))
 							{
 								decl String:class[MAX_NAME_LENGTH * 2]; // * 2
 								GetEdictClassname(weapon, class, sizeof(class));
@@ -701,7 +737,7 @@ public OnTouch(const String:output[], caller, activator, Float:delay)
 public Action:OnWeaponUsage(client, weapon)
 {
 	// Block weapon usage if player is punished, otherwise use weapons as usual
-	return (WeaponPunishment[client] && IsValidEntity(weapon)) ? Plugin_Handled : Plugin_Continue;
+	return (WeaponPunishment[client] && IsValidEdict(weapon)) ? Plugin_Handled : Plugin_Continue;
 }
 
 
@@ -720,15 +756,15 @@ public Action:OnWeaponUsage(client, weapon)
  *
  * When the say/say_team commands are used.
  * -------------------------------------------------------------------------- */
-public Action:OnClientSayCommand(client, const String:command[], const String:sArgs[])
+public Action:OnClientSayCommand(client, const String:command[], const String:text[])
 {
-	decl String:text[MAX_ZONE_LENGTH];
+	/*decl String:text[MAX_ZONE_LENGTH];
 
 	// Copy original message
 	strcopy(text, sizeof(text), sArgs);
 
 	// Remove quotes from dest string
-	StripQuotes(text);
+	StripQuotes(text);*/
 
 	// When player is about to name a zone
 	if (NamesZone[client])
@@ -854,7 +890,6 @@ public Action:Command_VoiceMenu(client, const String:command[], args)
 	// Check whether medic command is used
 	if (StrEqual(buffer, "0 0", false))
 	{
-		// Does player got access to edit zones and currently editing a zone ?
 		if (ZonePoint[client] != NO_POINT /*&& CheckCommandAccess(client, "sm_zones_immunity", ADMFLAG_CONFIG, true)*/)
 		{
 			// Yea, retrieve his origin
@@ -874,7 +909,6 @@ public Action:Command_VoiceMenu(client, const String:command[], args)
 			}
 			else if (ZonePoint[client] == SECOND_POINT)
 			{
-				// Reset zone point, because player already got it
 				ZonePoint[client] = NO_POINT;
 				SecondZoneVector[client][0] = origin[0];
 				SecondZoneVector[client][1] = origin[1];
@@ -888,6 +922,42 @@ public Action:Command_VoiceMenu(client, const String:command[], args)
 			// Dont perform 'medic' voice command
 			return Plugin_Handled;
 		}
+	}
+
+	return Plugin_Continue;
+}
+
+/* Command_Leaning()
+ *
+ * When the leaning command is used.
+ * -------------------------------------------------------------------------- */
+public Action:Command_Leaning(client, const String:command[], args)
+{
+	if (ZonePoint[client] != NO_POINT /*&& CheckCommandAccess(client, "sm_zones_immunity", ADMFLAG_CONFIG, true)*/)
+	{
+		decl Float:origin[3];
+		GetClientAbsOrigin(client, origin);
+
+		// Player is editing first point
+		if (ZonePoint[client] == FIRST_POINT)
+		{
+			ZonePoint[client] = SECOND_POINT;
+			FirstZoneVector[client][0] = origin[0];
+			FirstZoneVector[client][1] = origin[1];
+			FirstZoneVector[client][2] = origin[2];
+			PrintToChat(client, "%s%t", PREFIX, "Zone Edge");
+		}
+		else if (ZonePoint[client] == SECOND_POINT)
+		{
+			ZonePoint[client] = NO_POINT;
+			SecondZoneVector[client][0] = origin[0];
+			SecondZoneVector[client][1] = origin[1];
+			SecondZoneVector[client][2] = origin[2];
+			PrintToChat(client, "%s%t", PREFIX, "Type Zone Name");
+			NamesZone[client] = true;
+		}
+
+		return Plugin_Handled;
 	}
 
 	return Plugin_Continue;
@@ -1146,7 +1216,7 @@ ShowActivatedZonesMenu(client)
 	decl String:class[MAX_ZONE_LENGTH], zone; zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
-		if (IsValidEntity(zone) && !GetEntProp(zone, Prop_Data, "m_bDisabled") // Dont add diactivated zones
+		if (IsValidEdict(zone) && !GetEntProp(zone, Prop_Data, "m_bDisabled") // Dont add diactivated zones to menu
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
 		&& strncmp(class, "sm_zone", 7) == 0)
 		{
@@ -1203,7 +1273,7 @@ ShowDiactivatedZonesMenu(client)
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
 		// If we found a zone, make sure its diactivated
-		if (IsValidEntity(zone) && GetEntProp(zone, Prop_Data, "m_bDisabled")
+		if (IsValidEdict(zone) && GetEntProp(zone, Prop_Data, "m_bDisabled")
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
 		&& strncmp(class, "sm_zone", 7) == 0) // Does name contains 'sm_zone' prefix?
 		{
@@ -2211,7 +2281,7 @@ ActivateZone(const String:text[])
 	decl String:class[MAX_ZONE_LENGTH+9], zone; zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
-		if (IsValidEntity(zone)
+		if (IsValidEdict(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
 		&& StrEqual(class[8], text, false)) // Skip first 8 characters to avoid comparing with 'sm_zone' prefix
 		{
@@ -2231,7 +2301,7 @@ DiactivateZone(const String:text[])
 	decl String:class[MAX_ZONE_LENGTH+9], zone; zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
-		if (IsValidEntity(zone)
+		if (IsValidEdict(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class))
 		&& StrEqual(class[8], text, false))
 		{
@@ -2338,7 +2408,7 @@ KillZone(zoneIndex)
 	zone = INIT;
 	while ((zone = FindEntityByClassname(zone, "trigger_multiple")) != INIT)
 	{
-		if (IsValidEntity(zone)
+		if (IsValidEdict(zone)
 		&& GetEntPropString(zone, Prop_Data, "m_iName", class, sizeof(class)) // Get m_iName datamap
 		&& StrEqual(class[8], ZoneName, false)) // And check if m_iName is equal to name from array
 		{
