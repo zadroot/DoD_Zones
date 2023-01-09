@@ -119,12 +119,12 @@
 	"Activated Zones"
 	{
 		"en"			"Activated zones"
-		"chi"           "已激活区域"
+		"chi"           "请选择激活的区域"
 	}
 	"Diactivated Zones"
 	{
 		"en"			"Diactivated zones"
-		"chi"           "已关闭区域"
+		"chi"           "请选择关闭的区域"
 	}
 	"Active Zones"
 	{
