@@ -201,7 +201,7 @@
 	"Subtract from X"
 	{
 		"en"			"Subtract from X"
-		"chi"           "减少坐标Z"
+		"chi"           "减少坐标X"
 	}
 	"Subtract from Y"
 	{
@@ -238,7 +238,7 @@
 	"Can't shoot"
 	{
 		"en"			"You cant shoot while standing at this zone."
-		"chi"           "该区域不允许射击！"
+		"chi"           "该区域不允许攻击！"
 	}
 	"Can shoot"
 	{
