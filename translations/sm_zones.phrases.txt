@@ -3,146 +3,180 @@
 	"Setup Zones"
 	{
 		"en"			"Setup Zones"
+		"chi"           "设置地带"
 	}
 	"Setup Zones For"
 	{
 		"#format"		"{1:s}"
 		"en"			"Setup Zones for {1}"
+		"chi"           "设置 {1} 地带"
 	}
 	"Zone Edge"
 	{
 		"en"			"Push \"E\" button to set a zone."
+		"chi"           "请按下 \"E\" 来设置地带"
 	}
 	"Type Zone Name"
 	{
 		"en"			"Please type a name for this zone in chat. Type !stop or !cancel to abort."
+		"chi"           "请在聊天中输入此区域的名称。输入!stop或!cancel中止。"
 	}
 	"Abort Zone Name"
 	{
 		"en"			"Stopped naming the new zone and removed the zone."
+		"chi"           "停止命名新区域并删除该区域。"
 	}
 	"Abort Zone Rename"
 	{
 		"en"			"Stopped renaming the zone."
+		"chi"           "停止重命名区域。"
 	}
 	"Adding Zone"
 	{
 		"en"			"Adding a zone:"
+		"chi"           "添加一个区域:"
 	}
 	"Confirm Delete Zone"
 	{
 		"#format"		"{1:s}"
 		"en"			"Do you really want to delete \"{1}\"?"
+		"chi"           "你确定删除区域\"{1}\"吗?"
 	}
 	"Save"
 	{
 		"en"			"Save zone coordinations (Important!)"
+		"chi"           "保存区域坐标(重要!)"
 	}
 	"Name Already Taken"
 	{
 		"#format"		"{1:s}"
 		"en"			"There is already a zone called \"{1}\". Please write a different name in chat."
+		"chi"           "已经有一个叫 \"{1}\" 的区域了。请在聊天中写一个不同的名字。"
 	}
 	"Saved"
 	{
 		"en"			"Saved changes successfully."
+		"chi"           "保存更改成功!"
 	}
 	"Cant save"
 	{
 		"#format"		"{1:s}"
 		"en"			"Could not save zones config! Make sure \"{1}\" file is writeable."
+		"chi"           "无法保存区域配置!确保 \"{1}\" 文件是可写的。"
 	}
 	"Discard"
 	{
 		"en"			"Discard"
+		"chi"           "取消"
 	}
 	"Discarded"
 	{
 		"en"			"Discarded."
+		"chi"           "已取消"
 	}
 	"Delete Zone"
 	{
 		"en"			"Delete zone"
+		"chi"           "删除区域"
 	}
 	"Deleted Zone"
 	{
 		"#format"		"{1:s}"
 		"en"			"Deleted zone \"{1}\" successfully."
+		"chi"           "删除区域 \"{1}\" 成功"
 	}
 	"Deleted Fence"
 	{
 		"#format"		"{1:s}"
 		"en"			"Deleted fence \"{1}\" successfully."
+		"chi"           "删除围栏 \"{1}\" 成功"
 	}
 	"Canceled Fence Deletion"
 	{
 		"en"			"Canceled the deletion of the fence."
+		"chi"           "取消删除围栏。"
 	}
 	"Canceled Zone Deletion"
 	{
 		"en"			"Canceled the deletion of the zone."
+		"chi"           "取消删除区域。"
 	}
 	"Name Edited"
 	{
 		"en"			"Edited the name successfully."
+		"chi"           "编辑名字成功!"
 	}
 	"Activate Zones"
 	{
 		"en"			"Activate a zone"
+		"chi"           "激活区域"
 	}
 	"Diactivate Zones"
 	{
 		"en"			"Diactivate a zone"
+		"chi"           "关闭区域"
 	}
 	"Activated Zones"
 	{
 		"en"			"Activated zones"
+		"chi"           "已激活区域"
 	}
 	"Diactivated Zones"
 	{
 		"en"			"Diactivated zones"
+		"chi"           "已关闭区域"
 	}
 	"Active Zones"
 	{
 		"en"			"Setup active zones"
+		"chi"           "设置激活区域"
 	}
 	"Add Zones"
 	{
 		"en"			"Add zone"
+		"chi"           "添加区域"
 	}
 	"Add Zone Instruction"
 	{
 		"en"			"Push \"E\" button to set another zone at your feet, which will specify the two diagonal opposite corners of the zone."
+		"chi"           "按 \"E\" 按钮设置另一个区域在你的脚，这将指定两个对角线相对的角的区域。"
 	}
 	"Manage Zone"
 	{
 		"#format"		"{1:s}"
 		"en"			"Manage {1} zone:"
+		"chi"           "管理 {1} 区域:"
 	}
 	"Edit First Point"
 	{
 		"en"			"Edit First Point"
+		"chi"           "编辑坐标"
 	}
 	"Edit Second Point"
 	{
 		"en"			"Edit Second Point"
+		"chi"           "编辑坐标时间"
 	}
 	"Edit Name"
 	{
 		"en"			"Edit Name"
+		"chi"           "编辑昵称"
 	}
 	"Teleport To"
 	{
 		"en"			"Teleport to"
+		"chi"           "传送到该区域"
 	}
 	"Both"
 	{
 		"en"			"Both"
+		"chi"           "双方"
 	}
 	"Trigger Team"
 	{
 		"#format"		"{1:s}"
 		"en"			"Team: {1}"
+		"chi"           "团队：{1}"
 	}
 	"Edit Zone"
 	{
@@ -152,79 +186,98 @@
 	"Add to X"
 	{
 		"en"			"Add to X"
+		"chi"           "添加坐标X"
 	}
 	"Add to Y"
 	{
 		"en"			"Add to Y"
+		"chi"           "添加坐标Y"
 	}
 	"Add to Z"
 	{
 		"en"			"Add to Z"
+		"chi"           "添加坐标Z"
 	}
 	"Subtract from X"
 	{
 		"en"			"Subtract from X"
+		"chi"           "减少坐标Z"
 	}
 	"Subtract from Y"
 	{
 		"en"			"Subtract from Y"
+		"chi"           "减少坐标Y"
 	}
 	"Subtract from Z"
 	{
 		"en"			"Subtract from Z"
+		"chi"           "减少坐标Z"
 	}
 	"Player Entered Zone"
 	{
 		"#format"		"{1:N},{2:s}"
 		"en"			"{1} entered protected zone \"{2}\"."
+		"chi"           "{1} 进入保护区 \"{2}\"。"
 	}
 	"Player Slayed"
 	{
 		"#format"		"{1:N},{2:s}"
 		"en"			"{1} has been slayed for entering protected zone \"{2}\"."
+		"chi"           "{1} 因为进入保护区 \"{2}\" 而被处死!"
 	}
 	"Can use melee only"
 	{
 		"en"			"You can use only melee while standing at this zone."
+		"chi"           "当你进入该保护区时只能使用近战武器"
 	}
 	"Can use any weapon"
 	{
 		"en"			"Now you can use any weapon."
+		"chi"           "你已离开保护区，现在你可以使用任何武器了"
 	}
 	"Can't shoot"
 	{
 		"en"			"You cant shoot while standing at this zone."
+		"chi"           "该区域不允许射击！"
 	}
 	"Can shoot"
 	{
 		"en"			"Now you can shoot."
+		"chi"           "你已离开保护区，可以进行射击了！"
 	}
 	"Punishment"
 	{
 		"en"			"Punishment"
+		"chi"           "惩罚方式"
 	}
 	"Default"
 	{
 		"en"			"Default"
+		"chi"           "默认"
 	}
 	"Print Message"
 	{
 		"en"			"Print message in chat"
+		"chi"           "输出消息到聊天区"
 	}
 	"Bounce Back"
 	{
 		"en"			"Push player back"
+		"chi"           "拦截该玩家进入"
 	}
 	"Only Melee"
 	{
 		"en"			"Allow only the melee"
+		"chi"           "只允许使用近战武器"
 	}
 	"No shooting"
 	{
 		"en"			"No shooting"
+		"chi"           "不允许射击"
 	}
 	"Custom Punishment"
 	{
 		"en"			"Custom"
+		"chi"           "自定义"
 	}
 }
