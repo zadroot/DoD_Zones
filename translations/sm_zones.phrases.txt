@@ -155,7 +155,7 @@
 	"Edit Second Point"
 	{
 		"en"			"Edit Second Point"
-		"chi"           "编辑坐标时间"
+		"chi"           "编辑第二个坐标"
 	}
 	"Edit Name"
 	{
